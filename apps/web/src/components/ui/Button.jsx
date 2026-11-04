@@ -4,11 +4,10 @@ import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const VARIANTS = {
-  primary:
-    'bg-gradient-to-r from-sync-violet to-sync-violet-dim text-white shadow-glow hover:brightness-110',
-  secondary: 'glass text-ink hover:bg-surface-raised/80',
-  ghost: 'bg-transparent text-ink-muted hover:text-ink hover:bg-white/5',
-  danger: 'bg-sync-coral text-white hover:brightness-110',
+  primary: 'bg-ember-gradient text-white shadow-ember hover:brightness-110',
+  secondary: 'surface text-paper hover:bg-stage-overlay',
+  ghost: 'bg-transparent text-paper-muted hover:text-paper hover:bg-white/5',
+  danger: 'bg-ember-dim text-white hover:brightness-110',
 };
 
 const SIZES = {
@@ -28,7 +27,7 @@ const Button = forwardRef(function Button(
       whileHover={{ scale: disabled ? 1 : 1.015 }}
       disabled={disabled || isLoading}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-xl2 font-medium',
+        'inline-flex items-center justify-center gap-2 rounded-full font-semibold',
         'transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed',
         VARIANTS[variant],
         SIZES[size],

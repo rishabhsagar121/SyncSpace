@@ -1,4 +1,3 @@
-cat > /home/claude/syncspace/apps/server/src/modules/rooms/room.routes.js << 'EOF'
 import { Router } from 'express';
 import { roomController } from './room.controller.js';
 import { validate } from '../../middleware/validate.js';
@@ -29,5 +28,3 @@ router.patch('/:roomId/mode', validate(updateModeSchema), roomController.updateM
 router.delete('/:roomId', validate(roomIdParamSchema), roomController.remove);
 
 export default router;
-EOF
-echo written

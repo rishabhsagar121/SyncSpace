@@ -5,56 +5,67 @@ export default {
   theme: {
     extend: {
       colors: {
-        void: {
-          DEFAULT: '#0B0E14',
-          light: '#F7F7FB',
-        },
-        surface: {
-          DEFAULT: '#131722',
-          raised: '#1A1F2E',
-          light: '#FFFFFF',
+        stage: {
+          DEFAULT: '#09090B',
+          raised: '#16161A',
+          overlay: '#1F1F24',
+          light: '#F7F6F3',
+          'light-raised': '#FFFFFF',
         },
         border: {
           DEFAULT: 'rgba(255,255,255,0.08)',
+          strong: 'rgba(255,255,255,0.14)',
           light: 'rgba(15,17,25,0.08)',
         },
-        ink: {
-          DEFAULT: '#F5F6FA',
-          muted: '#8B93A7',
-          light: '#14161F',
-          'light-muted': '#5B6072',
+        paper: {
+          DEFAULT: '#F5F5F2',
+          muted: '#9A9AA2',
+          light: '#141416',
+          'light-muted': '#6B6B74',
         },
-        sync: {
-          violet: '#6C5CE7',
-          'violet-dim': '#4A3FB3',
-          teal: '#00D9C0',
-          'teal-dim': '#00A896',
-          coral: '#FF6B6B',
+        ember: {
+          DEFAULT: '#FF4D4D',
+          hot: '#FF8A3D',
+          dim: '#C93A3A',
+        },
+        pulse: {
+          violet: '#7C3AED',
+          pink: '#EC4899',
+          orange: '#F97316',
         },
       },
       fontFamily: {
-        display: ['"Cabinet Grotesk"', 'Inter', 'sans-serif'],
+        display: ['"Clash Display"', '"Cabinet Grotesk"', 'Inter', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
-      backdropBlur: {
-        glass: '20px',
+      backgroundImage: {
+        'ember-gradient': 'linear-gradient(135deg, #FF4D4D 0%, #FF8A3D 100%)',
+        'pulse-gradient': 'conic-gradient(from 180deg, #7C3AED, #EC4899, #F97316, #7C3AED)',
+        'stage-fade': 'linear-gradient(180deg, rgba(9,9,11,0) 0%, #09090B 92%)',
       },
       boxShadow: {
-        glass: '0 8px 32px rgba(0, 0, 0, 0.28)',
-        glow: '0 0 40px rgba(108, 92, 231, 0.35)',
+        card: '0 12px 32px rgba(0, 0, 0, 0.45)',
+        'card-hover': '0 20px 48px rgba(0, 0, 0, 0.6)',
+        ember: '0 0 32px rgba(255, 77, 77, 0.35)',
       },
       keyframes: {
-        pulseSync: {
-          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
-          '50%': { transform: 'scale(1.15)', opacity: '0.7' },
+        spinSlow: {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        riseIn: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
         },
       },
       animation: {
-        'pulse-sync': 'pulseSync 1.8s ease-in-out infinite',
+        'spin-slow': 'spinSlow 6s linear infinite',
+        'rise-in': 'riseIn 0.5s ease both',
       },
       borderRadius: {
         xl2: '1.25rem',
+        poster: '0.875rem',
       },
     },
   },

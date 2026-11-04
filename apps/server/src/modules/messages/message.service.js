@@ -1,6 +1,8 @@
+// apps/server/src/modules/messages/message.service.js
 import { messageRepository } from './message.repository.js';
 import { roomRepository } from '../rooms/room.repository.js';
 import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
+import { domainEvents } from '../../utils/domainEvents.js';
 import { AppError } from '../../utils/AppError.js';
 
 async function assertMember(roomId, userId) {
@@ -22,7 +24,7 @@ export const messageService = {
     const result = await uploadBufferToCloudinary(file.buffer, 'syncspace/messages');
     const type = file.mimetype.startsWith('image/') ? 'IMAGE' : 'FILE';
 
-    return messageRepository.create({
+    const message = await messageRepository.create({
       roomId,
       senderId,
       type,
@@ -30,6 +32,12 @@ export const messageService = {
       fileName: file.originalname,
       replyToId,
     });
+
+    // REST-only endpoint (binary upload can't go over the socket) — broadcast
+    // manually so the rest of the room sees it live, same as text messages.
+    domainEvents.emit('message:created', { roomId, message });
+
+    return message;
   },
 
   async list(roomId, userId, opts) {

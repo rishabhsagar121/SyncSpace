@@ -1,5 +1,7 @@
+// apps/server/src/modules/friends/friend.service.js
 import { friendRepository } from './friend.repository.js';
 import { notificationService } from '../notifications/notification.service.js';
+import { userRepository } from '../users/user.repository.js';
 import { AppError } from '../../utils/AppError.js';
 
 // Normalizes the friendship record into "the other person" from userId's POV
@@ -21,17 +23,26 @@ export const friendService = {
     const existing = await friendRepository.findPendingRequest(senderId, receiverId);
     if (existing) throw AppError.conflict('Friend request already sent');
 
+    const sender = await userRepository.findById(senderId);
+
     // Auto-accept if the other person already sent one to you
     const reverse = await friendRepository.findPendingRequest(receiverId, senderId);
     if (reverse) {
       await friendRepository.updateRequestStatus(reverse.id, 'ACCEPTED');
       const friendship = await friendRepository.createFriendship(senderId, receiverId);
-      await notificationService.create(receiverId, 'FRIEND_ACCEPTED', { fromUserId: senderId });
+      await notificationService.create(receiverId, 'FRIEND_ACCEPTED', {
+        fromUserId: senderId,
+        fromUsername: sender?.username,
+      });
       return { autoAccepted: true, friendship };
     }
 
     const request = await friendRepository.createRequest(senderId, receiverId);
-    await notificationService.create(receiverId, 'FRIEND_REQUEST', { fromUserId: senderId, requestId: request.id });
+    await notificationService.create(receiverId, 'FRIEND_REQUEST', {
+      fromUserId: senderId,
+      fromUsername: sender?.username,
+      requestId: request.id,
+    });
     return { autoAccepted: false, request };
   },
 
@@ -44,7 +55,11 @@ export const friendService = {
 
     if (accept) {
       const friendship = await friendRepository.createFriendship(request.senderId, request.receiverId);
-      await notificationService.create(request.senderId, 'FRIEND_ACCEPTED', { fromUserId: receiverId });
+      const accepter = await userRepository.findById(receiverId);
+      await notificationService.create(request.senderId, 'FRIEND_ACCEPTED', {
+        fromUserId: receiverId,
+        fromUsername: accepter?.username,
+      });
       return { accepted: true, friendship };
     }
     return { accepted: false };

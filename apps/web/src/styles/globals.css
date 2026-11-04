@@ -7,31 +7,61 @@
     @apply scroll-smooth;
   }
   body {
-    @apply bg-void text-ink transition-colors duration-300;
+    @apply bg-stage text-paper transition-colors duration-300;
   }
   .light body {
-    @apply bg-void-light text-ink-light;
+    @apply bg-stage-light text-paper-light;
   }
   ::selection {
-    @apply bg-sync-violet/40 text-white;
+    @apply bg-ember/40 text-white;
   }
   :focus-visible {
-    outline: 2px solid theme('colors.sync.teal');
+    outline: 2px solid theme('colors.ember.DEFAULT');
     outline-offset: 2px;
     border-radius: 4px;
+  }
+  /* horizontal rails: show the scrollbar track but keep it out of the way */
+  .rail-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  }
+  .rail-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+  .rail-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
   }
 }
 
 @layer components {
-  .glass {
-    @apply bg-surface/60 backdrop-blur-glass border border-border shadow-glass;
+  .surface {
+    @apply bg-stage-raised border border-border;
   }
-  .light .glass {
-    @apply bg-surface-light/70 border-border-light;
+  .light .surface {
+    @apply bg-stage-light-raised border-border-light;
   }
 
-  .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-sync-violet to-sync-teal;
+  .ember-text {
+    @apply bg-clip-text text-transparent bg-ember-gradient;
+  }
+
+  /* the signature: a rotating conic ring around anything "live" */
+  .pulse-ring {
+    position: relative;
+  }
+  .pulse-ring::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    background: conic-gradient(from 180deg, #7c3aed, #ec4899, #f97316, #7c3aed);
+    animation: spinSlow 6s linear infinite;
+    z-index: 0;
+  }
+  .pulse-ring > * {
+    position: relative;
+    z-index: 1;
   }
 }
 

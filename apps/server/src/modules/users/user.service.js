@@ -20,8 +20,20 @@ export const userService = {
 
   async uploadAvatar(userId, file) {
     if (!file) throw AppError.badRequest('No file provided');
-    const result = await uploadBufferToCloudinary(file.buffer, 'syncspace/avatars');
-    return userRepository.updateAvatar(userId, result.secure_url);
+    let avatarUrl = '';
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      try {
+        const result = await uploadBufferToCloudinary(file.buffer, 'syncspace/avatars');
+        avatarUrl = result.secure_url;
+      } catch (err) {
+        const b64 = file.buffer.toString('base64');
+        avatarUrl = `data:${file.mimetype || 'image/png'};base64,${b64}`;
+      }
+    } else {
+      const b64 = file.buffer.toString('base64');
+      avatarUrl = `data:${file.mimetype || 'image/png'};base64,${b64}`;
+    }
+    return userRepository.updateAvatar(userId, avatarUrl);
   },
 
   async updatePrivacy(userId, privacy) {

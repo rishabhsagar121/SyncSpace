@@ -1,4 +1,3 @@
-cat > /home/claude/syncspace/apps/server/src/modules/users/user.routes.js << 'EOF'
 import { Router } from 'express';
 import { userController } from './user.controller.js';
 import { validate } from '../../middleware/validate.js';
@@ -25,5 +24,3 @@ router.delete('/me/sessions/:sessionId', validate(sessionParamSchema), userContr
 router.delete('/me', userController.deleteAccount);
 
 export default router;
-EOF
-echo written

@@ -1,7 +1,20 @@
 import { prisma } from '../../config/prisma.js';
 
+const SAFE_USER_SELECT = {
+  id: true,
+  username: true,
+  email: true,
+  presenceStatus: true,
+  lastSeenAt: true,
+  deletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  profile: true,
+};
+
 export const userRepository = {
-  findById: (id) => prisma.user.findUnique({ where: { id }, include: { profile: true } }),
+  findById: (id) =>
+    prisma.user.findUnique({ where: { id }, select: SAFE_USER_SELECT }),
 
   searchByUsername: (query, excludeUserId) =>
     prisma.user.findMany({

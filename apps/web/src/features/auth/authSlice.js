@@ -20,6 +20,10 @@ const authSlice = createSlice({
     userUpdated(state, action) {
       state.user = { ...state.user, ...action.payload };
     },
+    sessionRestored(state, action) {
+      state.user = action.payload;
+      state.status = 'authenticated';
+    },
     loggedOut(state) {
       state.user = null;
       state.accessToken = null;
@@ -35,8 +39,14 @@ const authSlice = createSlice({
   },
 });
 
-export const { credentialsReceived, userUpdated, loggedOut, authLoading, authError } =
-  authSlice.actions;
+export const {
+  credentialsReceived,
+  userUpdated,
+  sessionRestored,
+  loggedOut,
+  authLoading,
+  authError,
+} = authSlice.actions;
 
 export const selectCurrentUser = (state) => state.auth.user;
 export const selectIsAuthenticated = (state) => state.auth.status === 'authenticated';

@@ -4,7 +4,7 @@ export default function Card({ as: Tag = 'div', interactive = false, className, 
   return (
     <Tag
       className={clsx(
-        'glass rounded-xl2 p-6',
+        'surface rounded-xl2 p-6',
         interactive && 'transition-transform duration-200 hover:-translate-y-0.5 cursor-pointer',
         className
       )}

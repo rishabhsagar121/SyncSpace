@@ -1,25 +1,19 @@
-# Dependencies
+# dependencies
 node_modules/
 
-# Environment
+# builds
+dist/
+build/
+coverage/
+
+# secrets (never commit)
 .env
-.env.local
+.env.*
+!.env.example
+cookies.txt
+*.pem
 
-# Logs
-logs
+# logs and OS files
 *.log
-
-# Build
-dist
-build
-
-# OS
 .DS_Store
 Thumbs.db
-
-# VS Code
-.vscode/
-
-# Prisma
-prisma/dev.db
-prisma/dev.db-journal
