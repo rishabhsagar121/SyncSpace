@@ -4,6 +4,7 @@ import { redisClient } from '../../config/redis.js';
 import { logger } from '../../config/logger.js';
 
 const roomChannel = (roomId) => `room:${roomId}`;
+const callChannel = (roomId) => `call:${roomId}`;
 const userChannel = (userId) => `user:${userId}`;
 const onlineKey = (roomId) => `room:${roomId}:online`;
 
@@ -67,7 +68,16 @@ export function bridgeRoomDomainEvents(io, domainEvents) {
 
   domainEvents.on('room:member-kicked', ({ roomId, userId, byUserId }) => {
     io.to(userChannel(userId)).emit(SOCKET_EVENTS.ROOM_MEMBER_KICKED, { roomId, byUserId });
-    io.in(userChannel(userId)).socketsLeave(roomChannel(roomId)); // stop their live updates
+
+    // Remove them from the room's live channels, including any call they are in
+    io.in(userChannel(userId)).socketsLeave([roomChannel(roomId), callChannel(roomId)]);
+    io.to(callChannel(roomId)).emit(SOCKET_EVENTS.WEBRTC_PEER_LEFT, { roomId, peerId: userId });
+
+    // Keep the "who's online in this room" list accurate
+    redisClient
+      .sRem(onlineKey(roomId), userId)
+      .catch((err) => logger.error(`Kick cleanup failed: ${err.message}`));
+
     io.to(roomChannel(roomId)).emit(SOCKET_EVENTS.ROOM_MEMBER_LEFT, { roomId, userId });
   });
 
