@@ -17,13 +17,10 @@ async function getMembership(roomId, userId) {
   return membership && !membership.leftAt ? membership : null;
 }
 
-// Host and co-host always control playback; members only if the room allows guest control
+// Every member of the room can control playback
 async function canControl(roomId, userId) {
   const membership = await getMembership(roomId, userId);
-  if (!membership) return false;
-  if (membership.role === 'HOST' || membership.role === 'CO_HOST') return true;
-  const room = await roomRepository.findById(roomId);
-  return !!room?.settings?.allowGuestControl;
+  return !!membership;
 }
 
 // Wraps a handler so it only runs for people allowed to control playback
@@ -33,7 +30,7 @@ function controllerOnly(socket, handler) {
       if (!(await canControl(payload.roomId, socket.userId))) {
         socket.emit(SOCKET_EVENTS.ROOM_ERROR, {
           roomId: payload.roomId,
-          message: 'You do not have permission to control playback',
+          message: 'You are not a member of this room',
         });
         return;
       }
@@ -111,7 +108,7 @@ export function registerSyncHandlers(io, socket) {
     }
   });
 
-  // Someone with control answers a state request. It goes to the person who asked
+  // Someone answers a state request. It goes to the person who asked
   // (or the whole room if no target is given), and only known keys are saved.
   socket.on(
     SOCKET_EVENTS.SYNC_STATE_UPDATE,
@@ -126,4 +123,4 @@ export function registerSyncHandlers(io, socket) {
       target.emit(SOCKET_EVENTS.SYNC_STATE_UPDATE, { targetUserId, state: clean });
     })
   );
-}
+}``

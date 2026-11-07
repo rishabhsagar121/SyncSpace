@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { User, Shield, Save, Camera, Loader2 } from 'lucide-react';
 import { selectCurrentUser, userUpdated } from '@/features/auth/authSlice';
@@ -14,11 +14,21 @@ export default function Settings() {
 
   const [displayName, setDisplayName] = useState(user?.profile?.displayName || user?.username || '');
   const [bio, setBio] = useState(user?.profile?.bio || '');
-  const [showLastSeen, setShowLastSeen] = useState(true);
+  const [showLastSeen, setShowLastSeen] = useState(user?.profile?.privacy?.showLastSeen ?? true);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(user?.profile?.avatarUrl || null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Fill the form again if the user data arrives or changes (e.g. after a page refresh)
+  useEffect(() => {
+    if (!user) return;
+    setDisplayName(user.profile?.displayName || user.username || '');
+    setBio(user.profile?.bio || '');
+    setAvatarPreview(user.profile?.avatarUrl || null);
+    setShowLastSeen(user.profile?.privacy?.showLastSeen ?? true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const handleAvatarSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -50,22 +60,25 @@ export default function Settings() {
         })
       );
     } catch (err) {
+      setAvatarPreview(user?.profile?.avatarUrl || null);
       setErrorMsg(err.response?.data?.message || 'Failed to upload image. Please try again.');
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
+    setErrorMsg('');
     try {
-      await api.patch('/users/me/profile', { displayName, bio });
+      const { data } = await api.patch('/users/me/profile', { displayName, bio });
+      const savedProfile = data.data?.profile;
       dispatch(
         userUpdated({
           profile: {
             ...user?.profile,
-            displayName,
-            bio,
+            ...(savedProfile || { displayName, bio }),
           },
         })
       );
@@ -73,6 +86,30 @@ export default function Settings() {
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       setErrorMsg(err.response?.data?.message || 'Failed to update profile.');
+    }
+  };
+
+  const handlePrivacyChange = async (checked) => {
+    const previous = showLastSeen;
+    setShowLastSeen(checked);
+    setErrorMsg('');
+    try {
+      const privacy = {
+        showLastSeen: checked,
+        showEmail: user?.profile?.privacy?.showEmail ?? false,
+      };
+      const { data } = await api.patch('/users/me/privacy', privacy);
+      dispatch(
+        userUpdated({
+          profile: {
+            ...user?.profile,
+            privacy: data.data?.profile?.privacy ?? privacy,
+          },
+        })
+      );
+    } catch (err) {
+      setShowLastSeen(previous);
+      setErrorMsg(err.response?.data?.message || 'Failed to update privacy setting.');
     }
   };
 
@@ -95,7 +132,14 @@ export default function Settings() {
           <form onSubmit={handleSave} className="mt-6 space-y-5">
             <div className="flex items-center gap-5">
               <div className="relative group">
-                <Avatar name={user?.username} src={avatarPreview} size="lg" />
+                <Avatar
+                  user={{
+                    username: user?.username,
+                    displayName,
+                    avatarUrl: avatarPreview,
+                  }}
+                  size={80}
+                />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -130,7 +174,7 @@ export default function Settings() {
                   {uploading ? 'Uploading…' : 'Add / Change picture'}
                 </Button>
                 <p className="mt-1.5 text-xs text-paper-muted">
-                  JPG, PNG or GIF. Max 5MB.
+                  JPG, PNG, WebP or GIF. Max 5MB.
                 </p>
               </div>
             </div>
@@ -185,7 +229,7 @@ export default function Settings() {
               <input
                 type="checkbox"
                 checked={showLastSeen}
-                onChange={(e) => setShowLastSeen(e.target.checked)}
+                onChange={(e) => handlePrivacyChange(e.target.checked)}
                 className="h-4 w-4 rounded border-border accent-ember"
               />
             </label>

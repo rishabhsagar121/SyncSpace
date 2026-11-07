@@ -50,6 +50,7 @@ export function registerChatHandlers(io, socket) {
 
       io.to(roomChannel(roomId)).emit('chat:message', {
         ...message,
+        reactions: [],
         sender: {
           id: message.sender.id,
           username: message.sender.username,
@@ -61,6 +62,50 @@ export function registerChatHandlers(io, socket) {
     } catch (err) {
       logger.error(`chat:send failed: ${err.message}`);
       ack?.({ ok: false, message: 'Could not send the message.' });
+    }
+  });
+
+  // Click an emoji reaction once to add it, click it again to remove it
+  socket.on('chat:reaction-added', async ({ roomId, messageId, emoji } = {}) => {
+    try {
+      const symbol = String(emoji || '').trim();
+      if (!symbol || symbol.length > 8 || !messageId || !inRoom(roomId)) return;
+
+      const membership = await prisma.roomMember.findUnique({
+        where: { roomId_userId: { roomId, userId: userId() } },
+      });
+      if (!membership || membership.leftAt) return;
+
+      const message = await prisma.message.findUnique({
+        where: { id: messageId },
+        select: { roomId: true },
+      });
+      if (!message || message.roomId !== roomId) return;
+
+      const where = { messageId_userId_emoji: { messageId, userId: userId(), emoji: symbol } };
+      const existing = await prisma.messageReaction.findUnique({ where });
+
+      if (existing) {
+        await prisma.messageReaction.delete({ where });
+        io.to(roomChannel(roomId)).emit('chat:reaction-removed', {
+          roomId,
+          messageId,
+          userId: userId(),
+          emoji: symbol,
+        });
+      } else {
+        await prisma.messageReaction.create({
+          data: { messageId, userId: userId(), emoji: symbol },
+        });
+        io.to(roomChannel(roomId)).emit('chat:reaction-added', {
+          roomId,
+          messageId,
+          userId: userId(),
+          emoji: symbol,
+        });
+      }
+    } catch (err) {
+      logger.error(`chat:reaction failed: ${err.message}`);
     }
   });
 

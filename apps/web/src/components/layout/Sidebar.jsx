@@ -52,7 +52,14 @@ export default function Sidebar() {
 
       <div className="border-t border-border px-3 py-4">
         <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <Avatar name={user?.username} src={user?.profile?.avatarUrl} size="sm" live />
+          <Avatar
+            user={{
+              username: user?.username,
+              displayName: user?.profile?.displayName,
+              avatarUrl: user?.profile?.avatarUrl,
+            }}
+            size={36}
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-paper">{user?.username}</p>
             <p className="text-xs text-paper-muted">Online</p>

@@ -26,19 +26,22 @@ export default function Room() {
   const { data: room, isLoading } = useRoom(roomId);
   const [copied, setCopied] = useState(false);
 
-  const myMembership = room?.members?.find((m) => m.userId === currentUser?.id);
-  const isHost = myMembership?.role === 'HOST' || myMembership?.role === 'CO_HOST';
-  const allowGuestControl = room?.settings?.allowGuestControl ?? false;
-
+  // Everyone in the room can control playback
   const { source, changeSource, canControl, registerPlayer, emitPlay, emitPause, emitSeek } =
-    useRoomSync(roomId, { isHost, allowGuestControl });
+    useRoomSync(roomId, { isHost: true, allowGuestControl: true });
 
+  // Join the live room channel (and rejoin if the socket reconnects)
   useEffect(() => {
     if (!roomId) return;
     const socket = getSocket();
-    socket.emit('room:join', roomId);
+    const join = () => socket.emit('room:join', { roomId });
+
+    if (socket.connected) join();
+    socket.on('connect', join);
+
     return () => {
-      socket.emit('room:leave', roomId);
+      socket.off('connect', join);
+      socket.emit('room:leave', { roomId });
     };
   }, [roomId]);
 
@@ -132,7 +135,7 @@ export default function Room() {
                 <>
                   <Radio className="h-8 w-8 text-ember" />
                   <p className="font-display font-bold text-paper">
-                    {canControl ? 'Paste a YouTube link to get started' : 'Waiting for the host to pick something'}
+                    Paste a YouTube link to get started
                   </p>
                 </>
               )}

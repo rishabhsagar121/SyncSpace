@@ -4,11 +4,38 @@ import { roomRepository } from '../rooms/room.repository.js';
 import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
 import { domainEvents } from '../../utils/domainEvents.js';
 import { AppError } from '../../utils/AppError.js';
+import { env } from '../../config/env.js';
+
+const MAX_INLINE_BYTES = 3 * 1024 * 1024; // used only when Cloudinary is not available
 
 async function assertMember(roomId, userId) {
   const membership = await roomRepository.findMembership(roomId, userId);
   if (!membership || membership.leftAt) throw AppError.forbidden('Not a member of this room');
   return membership;
+}
+
+function cloudinaryConfigured() {
+  return !!(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET);
+}
+
+// Returns a URL for the file: Cloudinary if it works, otherwise a small inline data URL
+async function storeFile(file) {
+  if (cloudinaryConfigured()) {
+    try {
+      const result = await uploadBufferToCloudinary(file.buffer, 'syncspace/messages');
+      return result.secure_url;
+    } catch {
+      // fall through to the inline fallback below
+    }
+  }
+
+  if (file.size > MAX_INLINE_BYTES) {
+    throw AppError.badRequest(
+      'File storage (Cloudinary) is not working, and this file is too large to send without it.'
+    );
+  }
+  const b64 = file.buffer.toString('base64');
+  return `data:${file.mimetype || 'application/octet-stream'};base64,${b64}`;
 }
 
 export const messageService = {
@@ -21,20 +48,19 @@ export const messageService = {
     await assertMember(roomId, senderId);
     if (!file) throw AppError.badRequest('No file provided');
 
-    const result = await uploadBufferToCloudinary(file.buffer, 'syncspace/messages');
+    const fileUrl = await storeFile(file);
     const type = file.mimetype.startsWith('image/') ? 'IMAGE' : 'FILE';
 
     const message = await messageRepository.create({
       roomId,
       senderId,
       type,
-      fileUrl: result.secure_url,
+      fileUrl,
       fileName: file.originalname,
-      replyToId,
+      replyToId: replyToId || undefined,
     });
 
-    // REST-only endpoint (binary upload can't go over the socket) — broadcast
-    // manually so the rest of the room sees it live, same as text messages.
+    // Binary uploads go over REST, so broadcast to the room ourselves
     domainEvents.emit('message:created', { roomId, message });
 
     return message;

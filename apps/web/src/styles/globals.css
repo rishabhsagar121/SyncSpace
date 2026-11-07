@@ -9,9 +9,6 @@
   body {
     @apply bg-stage text-paper transition-colors duration-300;
   }
-  .light body {
-    @apply bg-stage-light text-paper-light;
-  }
   ::selection {
     @apply bg-ember/40 text-white;
   }
@@ -37,9 +34,6 @@
 @layer components {
   .surface {
     @apply bg-stage-raised border border-border;
-  }
-  .light .surface {
-    @apply bg-stage-light-raised border-border-light;
   }
 
   .ember-text {

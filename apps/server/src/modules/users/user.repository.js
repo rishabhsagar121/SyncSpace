@@ -28,13 +28,25 @@ export const userRepository = {
     }),
 
   updateProfile: (userId, data) =>
-    prisma.profile.update({ where: { userId }, data }),
+    prisma.profile.upsert({
+      where: { userId },
+      update: data,
+      create: { userId, ...data },
+    }),
 
   updateAvatar: (userId, avatarUrl) =>
-    prisma.profile.update({ where: { userId }, data: { avatarUrl } }),
+    prisma.profile.upsert({
+      where: { userId },
+      update: { avatarUrl },
+      create: { userId, avatarUrl },
+    }),
 
   updatePrivacy: (userId, privacy) =>
-    prisma.profile.update({ where: { userId }, data: { privacy } }),
+    prisma.profile.upsert({
+      where: { userId },
+      update: { privacy },
+      create: { userId, privacy },
+    }),
 
   softDelete: (userId) =>
     prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date() } }),

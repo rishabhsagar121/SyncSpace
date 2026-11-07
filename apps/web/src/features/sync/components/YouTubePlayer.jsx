@@ -22,20 +22,29 @@ function loadYouTubeApi() {
   return apiLoadPromise;
 }
 
+const POLL_MS = 500;
+const SEEK_JUMP_PLAYING_S = 1.5; // time jump that counts as a skip while playing
+const SEEK_JUMP_PAUSED_S = 0.5; // time jump that counts as a skip while paused
+
 export default function YouTubePlayer({ videoId, onRegister, onPlay, onPause, onSeek }) {
   const containerRef = useRef(null);
-  const playerRef = useRef(null);
-  const seekingRef = useRef(false);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Always call the newest handlers, even though the player is created once per video
+  const handlersRef = useRef({ onRegister, onPlay, onPause, onSeek });
+  useEffect(() => {
+    handlersRef.current = { onRegister, onPlay, onPause, onSeek };
+  });
 
   useEffect(() => {
     let cancelled = false;
     let player = null;
+    let poll = null;
     setErrorMsg(null);
 
     if (!containerRef.current || !videoId) return;
 
-    // Reset container with fresh target element so YouTube can safely attach the iframe
+    // Fresh target element so YouTube can safely attach the iframe
     containerRef.current.innerHTML = '<div id="yt-player-target" style="width: 100%; height: 100%;"></div>';
     const targetElement = containerRef.current.firstElementChild;
 
@@ -58,47 +67,74 @@ export default function YouTubePlayer({ videoId, onRegister, onPlay, onPause, on
           events: {
             onReady: (event) => {
               if (cancelled) return;
-              playerRef.current = event.target;
-              onRegister?.({
+              const p = event.target;
+
+              handlersRef.current.onRegister?.({
                 play: () => {
                   try {
-                    event.target.playVideo();
+                    p.playVideo();
                   } catch {}
                 },
                 pause: () => {
                   try {
-                    event.target.pauseVideo();
+                    p.pauseVideo();
                   } catch {}
                 },
                 seekTo: (seconds) => {
                   try {
-                    seekingRef.current = true;
-                    event.target.seekTo(seconds, true);
+                    p.seekTo(seconds, true);
                   } catch {}
                 },
                 getState: () => {
                   try {
                     return {
-                      positionMs: Math.round((event.target.getCurrentTime?.() || 0) * 1000),
-                      playing: event.target.getPlayerState?.() === 1,
+                      positionMs: Math.round((p.getCurrentTime?.() || 0) * 1000),
+                      playing: p.getPlayerState?.() === 1,
                     };
                   } catch {
                     return { positionMs: 0, playing: false };
                   }
                 },
               });
+
+              // Detect skips (the iframe gives no seek event): watch the time position
+              let lastTime = null;
+              let lastWall = 0;
+              let lastPlaying = false;
+              poll = setInterval(() => {
+                try {
+                  const state = p.getPlayerState?.();
+                  const playing = state === 1;
+                  const paused = state === 2;
+                  const now = Date.now();
+
+                  // Buffering, cued, etc.: start measuring again afterwards
+                  if (!playing && !paused) {
+                    lastTime = null;
+                    return;
+                  }
+
+                  const current = p.getCurrentTime?.() || 0;
+                  if (lastTime !== null && playing === lastPlaying) {
+                    const expected = playing ? lastTime + (now - lastWall) / 1000 : lastTime;
+                    const limit = playing ? SEEK_JUMP_PLAYING_S : SEEK_JUMP_PAUSED_S;
+                    if (Math.abs(current - expected) > limit) {
+                      handlersRef.current.onSeek?.(Math.round(current * 1000));
+                    }
+                  }
+                  lastTime = current;
+                  lastWall = now;
+                  lastPlaying = playing;
+                } catch {}
+              }, POLL_MS);
             },
             onStateChange: (e) => {
-              if (cancelled || !playerRef.current) return;
+              if (cancelled || !player) return;
               try {
-                const positionMs = Math.round((playerRef.current.getCurrentTime?.() || 0) * 1000);
-                if (seekingRef.current) {
-                  seekingRef.current = false;
-                  onSeek?.(positionMs);
-                  return;
-                }
-                if (e.data === window.YT.PlayerState.PLAYING) onPlay?.(positionMs);
-                if (e.data === window.YT.PlayerState.PAUSED) onPause?.(positionMs);
+                const positionMs = Math.round((player.getCurrentTime?.() || 0) * 1000);
+                // Only real play/pause changes: buffering (3) and the rest are ignored
+                if (e.data === window.YT.PlayerState.PLAYING) handlersRef.current.onPlay?.(positionMs);
+                else if (e.data === window.YT.PlayerState.PAUSED) handlersRef.current.onPause?.(positionMs);
               } catch {}
             },
             onError: (e) => {
@@ -119,10 +155,12 @@ export default function YouTubePlayer({ videoId, onRegister, onPlay, onPause, on
 
     return () => {
       cancelled = true;
+      clearInterval(poll);
+      // Tell the sync code this player is gone so it never talks to a dead player
+      handlersRef.current.onRegister?.(null);
       try {
         player?.destroy?.();
       } catch {}
-      playerRef.current = null;
     };
   }, [videoId]);
 

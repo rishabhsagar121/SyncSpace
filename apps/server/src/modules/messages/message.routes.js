@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import {prisma} from '../../config/prisma.js';
+import { prisma } from '../../config/prisma.js';
 import { authMiddleware } from '../../middleware/authMiddleware.js';
+import { uploadAnyFile } from '../../utils/upload.js';
+import { messageController } from './message.controller.js';
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const router = Router();
@@ -18,6 +20,7 @@ router.get('/room/:roomId', wrap(async (req, res) => {
     take,
     ...(req.query.cursor ? { skip: 1, cursor: { id: String(req.query.cursor) } } : {}),
     include: {
+      reactions: true,
       sender: {
         select: {
           id: true,
@@ -38,5 +41,8 @@ router.get('/room/:roomId', wrap(async (req, res) => {
   }));
   res.json({ messages: formatted.reverse(), hasMore: rows.length === take });
 }));
+
+// Upload a file or voice note into a room's chat
+router.post('/room/:roomId/file', uploadAnyFile.single('file'), messageController.sendFile);
 
 export default router;

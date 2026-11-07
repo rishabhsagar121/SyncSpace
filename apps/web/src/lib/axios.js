@@ -49,9 +49,14 @@ api.interceptors.response.use(
         {},
         { withCredentials: true }
       );
-      window.localStorage.setItem('accessToken', data.accessToken);
-      processQueue(null, data.accessToken);
-      originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+
+      // The server may send the token at data.accessToken or data.data.accessToken
+      const newToken = data?.data?.accessToken ?? data?.accessToken;
+      if (!newToken) throw new Error('No access token in refresh response');
+
+      window.localStorage.setItem('accessToken', newToken);
+      processQueue(null, newToken);
+      originalRequest.headers.Authorization = `Bearer ${newToken}`;
       return api(originalRequest);
     } catch (refreshError) {
       processQueue(refreshError, null);

@@ -6,7 +6,8 @@ export const messagesApi = {
     const { data } = await api.get(`/messages/room/${roomId}`, {
       params: cursor ? { cursor } : undefined,
     });
-    return data.data.messages;
+    // The server may answer { messages } or { data: { messages } }
+    return data?.data?.messages ?? data?.messages ?? [];
   },
 
   send: async (roomId, { content, replyToId }) => {

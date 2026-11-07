@@ -11,10 +11,16 @@ const EVENTS = {
   SYNC_STATE_UPDATE: 'sync:state-update',
 };
 
-// Applying a remote event triggers our own player's onStateChange, which
-// would otherwise re-broadcast it right back out. This window suppresses
-// that echo.
-const ECHO_SUPPRESS_MS = 600;
+// After we apply a remote command, our own player reports it back.
+// This window stops that report from being sent out again.
+const ECHO_SUPPRESS_MS = 1500;
+// A fresh player starts on its own; ignore its first events
+const NEW_PLAYER_SUPPRESS_MS = 3000;
+// A fresh player needs a moment before it can be seeked or paused safely
+const PLAYER_SETTLE_MS = 1500;
+// Only jump the video if we are further than this from the room's position
+const PLAY_DRIFT_MS = 1500;
+const PAUSE_DRIFT_MS = 500;
 
 export function extractYouTubeId(input) {
   if (!input) return null;
@@ -45,26 +51,81 @@ export function extractYouTubeId(input) {
   return null;
 }
 
+const storageKey = (roomId) => `syncspace:room:${roomId}:source`;
+
+function readSavedSource(roomId) {
+  if (!roomId) return null;
+  try {
+    const saved = localStorage.getItem(storageKey(roomId));
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+function seekIfNeeded(player, positionMs, toleranceMs) {
+  const current = player.getState?.().positionMs ?? 0;
+  if (Math.abs(current - positionMs) > toleranceMs) player.seekTo?.(positionMs / 1000);
+}
+
 export function useRoomSync(roomId, { isHost, allowGuestControl }) {
   const socket = getSocket();
+  const canControl = !!(isHost || allowGuestControl);
 
-  // Restore active video source from localStorage across page refreshes
-  const [source, setSourceState] = useState(() => {
-    if (!roomId) return null;
-    try {
-      const saved = localStorage.getItem(`syncspace:room:${roomId}:source`);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [source, setSourceState] = useState(() => readSavedSource(roomId));
+  const sourceRef = useRef(source);
+  const playerRef = useRef(null); // set by the player component
+  const pendingStateRef = useRef(null); // state received before the player was ready
+  const suppressUntilRef = useRef(0);
+  const readyAtRef = useRef(0); // the player is safe to command after this time
+  const flushTimerRef = useRef(null);
+  const applyStateRef = useRef(null);
+  const syncedPlayingRef = useRef(null); // what the room is doing: true, false, or unknown
+  const canControlRef = useRef(canControl);
 
+  useEffect(() => {
+    canControlRef.current = canControl;
+  }, [canControl]);
+
+  // Only ever extends the quiet period, never shortens it
+  const suppressEcho = useCallback((ms = ECHO_SUPPRESS_MS) => {
+    suppressUntilRef.current = Math.max(suppressUntilRef.current, Date.now() + ms);
+  }, []);
+
+  const isEchoSuppressed = useCallback(() => Date.now() < suppressUntilRef.current, []);
+
+  // Apply the waiting state once the player has settled
+  const flushLater = useCallback((delay) => {
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      const pending = pendingStateRef.current;
+      if (!pending || !playerRef.current) return;
+      pendingStateRef.current = null;
+      applyStateRef.current?.(pending);
+    }, Math.max(delay, 0));
+  }, []);
+
+  // True if the player is still settling: the state is kept and applied a moment later
+  const deferIfSettling = useCallback(
+    (state) => {
+      const remaining = readyAtRef.current - Date.now();
+      if (remaining <= 0) return false;
+      pendingStateRef.current = state;
+      flushLater(remaining + 50);
+      return true;
+    },
+    [flushLater]
+  );
+
+  // Only changes anything when the video is actually different
   const setSource = useCallback(
     (newSource) => {
+      if (sourceRef.current?.videoId === newSource?.videoId) return;
+      sourceRef.current = newSource;
       setSourceState(newSource);
       try {
         if (newSource && roomId) {
-          localStorage.setItem(`syncspace:room:${roomId}:source`, JSON.stringify(newSource));
+          localStorage.setItem(storageKey(roomId), JSON.stringify(newSource));
         }
       } catch {
         /* storage unavailable */
@@ -73,55 +134,126 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
     [roomId]
   );
 
-  const suppressUntilRef = useRef(0);
-  const playerRef = useRef(null); // set by the player component
+  // Switching to another room: load that room's saved video
+  useEffect(() => {
+    const saved = readSavedSource(roomId);
+    pendingStateRef.current = null;
+    syncedPlayingRef.current = null;
+    clearTimeout(flushTimerRef.current);
+    if (saved?.videoId !== sourceRef.current?.videoId) {
+      sourceRef.current = saved;
+      setSourceState(saved);
+    }
+  }, [roomId]);
 
-  const canControl = isHost || allowGuestControl;
+  useEffect(() => () => clearTimeout(flushTimerRef.current), []);
 
-  const suppressEcho = () => {
-    suppressUntilRef.current = Date.now() + ECHO_SUPPRESS_MS;
-  };
-  const isEchoSuppressed = () => Date.now() < suppressUntilRef.current;
+  const applyState = useCallback(
+    (state) => {
+      if (!state) return;
 
-  const registerPlayer = useCallback((player) => {
-    playerRef.current = player;
-  }, []);
+      // A different video: switch first, apply the position once the player is ready
+      if (state.source && state.source.videoId !== sourceRef.current?.videoId) {
+        pendingStateRef.current = state;
+        setSource(state.source);
+        return;
+      }
+
+      const player = playerRef.current;
+      if (!player) {
+        pendingStateRef.current = state;
+        return;
+      }
+
+      // Wait until a freshly loaded player has settled
+      if (deferIfSettling(state)) return;
+
+      suppressEcho();
+      if (typeof state.positionMs === 'number') {
+        seekIfNeeded(player, state.positionMs, PLAY_DRIFT_MS);
+      }
+      if (state.playing === true) {
+        syncedPlayingRef.current = true;
+        player.play?.();
+      } else if (state.playing === false) {
+        syncedPlayingRef.current = false;
+        player.pause?.();
+      }
+    },
+    [setSource, suppressEcho, deferIfSettling]
+  );
+
+  useEffect(() => {
+    applyStateRef.current = applyState;
+  }, [applyState]);
+
+  const registerPlayer = useCallback(
+    (player) => {
+      playerRef.current = player;
+      if (!player) {
+        clearTimeout(flushTimerRef.current);
+        return;
+      }
+      // A brand-new player starts by itself: ignore its first events and give it time to settle
+      suppressEcho(NEW_PLAYER_SUPPRESS_MS);
+      readyAtRef.current = Date.now() + PLAYER_SETTLE_MS;
+      if (pendingStateRef.current) flushLater(PLAYER_SETTLE_MS + 50);
+    },
+    [suppressEcho, flushLater]
+  );
 
   useEffect(() => {
     if (!roomId) return;
 
     const onPlay = ({ positionMs }) => {
+      syncedPlayingRef.current = true;
+      const player = playerRef.current;
+      if (!player) return;
+      if (deferIfSettling({ positionMs, playing: true })) return;
       suppressEcho();
-      playerRef.current?.seekTo?.(positionMs / 1000);
-      playerRef.current?.play?.();
+      seekIfNeeded(player, positionMs, PLAY_DRIFT_MS);
+      player.play?.();
     };
+
     const onPause = ({ positionMs }) => {
+      syncedPlayingRef.current = false;
+      const player = playerRef.current;
+      if (!player) return;
+      if (deferIfSettling({ positionMs, playing: false })) return;
       suppressEcho();
-      playerRef.current?.seekTo?.(positionMs / 1000);
-      playerRef.current?.pause?.();
+      seekIfNeeded(player, positionMs, PAUSE_DRIFT_MS);
+      player.pause?.();
     };
+
     const onSeek = ({ positionMs }) => {
+      const player = playerRef.current;
+      if (!player) return;
+      if (deferIfSettling({ positionMs })) return;
       suppressEcho();
-      playerRef.current?.seekTo?.(positionMs / 1000);
+      player.seekTo?.(positionMs / 1000);
     };
+
     const onSourceChange = ({ source: newSource }) => {
+      pendingStateRef.current = null;
+      syncedPlayingRef.current = true; // a new video starts playing
       setSource(newSource);
     };
-    const onStateRequest = () => {
+
+    // Someone joined or refreshed and wants the current state: only that person gets the answer
+    const onStateRequest = ({ requestedBy } = {}) => {
+      if (!canControlRef.current || !requestedBy) return;
       const state = playerRef.current?.getState?.();
-      if (!state && !source) return;
-      socket.emit(EVENTS.SYNC_STATE_UPDATE, { roomId, state: { ...state, source } });
+      if (!state || !sourceRef.current) return;
+      socket.emit(EVENTS.SYNC_STATE_UPDATE, {
+        roomId,
+        targetUserId: requestedBy,
+        state: { ...state, source: sourceRef.current },
+      });
     };
-    const onStateUpdate = ({ state }) => {
-      if (!state) return;
-      suppressEcho();
-      if (state.source) setSource(state.source);
-      if (typeof state.positionMs === 'number') {
-        playerRef.current?.seekTo?.(state.positionMs / 1000);
-      }
-      if (state.playing) playerRef.current?.play?.();
-      else if (state.playing === false) playerRef.current?.pause?.();
-    };
+
+    const onStateUpdate = ({ state }) => applyState(state);
+
+    const requestState = () => socket.emit(EVENTS.SYNC_STATE_REQUEST, { roomId });
 
     socket.on(EVENTS.SYNC_PLAY, onPlay);
     socket.on(EVENTS.SYNC_PAUSE, onPause);
@@ -130,8 +262,9 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
     socket.on(EVENTS.SYNC_STATE_REQUEST, onStateRequest);
     socket.on(EVENTS.SYNC_STATE_UPDATE, onStateUpdate);
 
-    // Ask the room for current playback state on join / refresh
-    socket.emit(EVENTS.SYNC_STATE_REQUEST, { roomId });
+    // Ask once on join, and again whenever the socket (re)connects
+    if (socket.connected) requestState();
+    socket.on('connect', requestState);
 
     return () => {
       socket.off(EVENTS.SYNC_PLAY, onPlay);
@@ -140,14 +273,16 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
       socket.off(EVENTS.SYNC_SOURCE_CHANGE, onSourceChange);
       socket.off(EVENTS.SYNC_STATE_REQUEST, onStateRequest);
       socket.off(EVENTS.SYNC_STATE_UPDATE, onStateUpdate);
+      socket.off('connect', requestState);
     };
-  }, [roomId, socket, setSource, source]);
+  }, [roomId, socket, setSource, applyState, suppressEcho, deferIfSettling]);
 
   const changeSource = useCallback(
     (rawInput) => {
       const videoId = extractYouTubeId(rawInput);
       if (!videoId) return false;
       const newSource = { videoId, url: rawInput.trim() };
+      syncedPlayingRef.current = true;
       setSource(newSource);
       socket.emit(EVENTS.SYNC_SOURCE_CHANGE, { roomId, source: newSource });
       return true;
@@ -155,20 +290,25 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
     [roomId, socket, setSource]
   );
 
+  // Only send a play if the room is not already playing (buffering must not re-send it)
   const emitPlay = useCallback(
     (positionMs) => {
       if (isEchoSuppressed() || !canControl) return;
+      if (syncedPlayingRef.current === true) return;
+      syncedPlayingRef.current = true;
       socket.emit(EVENTS.SYNC_PLAY, { roomId, positionMs });
     },
-    [roomId, socket, canControl]
+    [roomId, socket, canControl, isEchoSuppressed]
   );
 
   const emitPause = useCallback(
     (positionMs) => {
       if (isEchoSuppressed() || !canControl) return;
+      if (syncedPlayingRef.current === false) return;
+      syncedPlayingRef.current = false;
       socket.emit(EVENTS.SYNC_PAUSE, { roomId, positionMs });
     },
-    [roomId, socket, canControl]
+    [roomId, socket, canControl, isEchoSuppressed]
   );
 
   const emitSeek = useCallback(
@@ -176,7 +316,7 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
       if (isEchoSuppressed() || !canControl) return;
       socket.emit(EVENTS.SYNC_SEEK, { roomId, positionMs });
     },
-    [roomId, socket, canControl]
+    [roomId, socket, canControl, isEchoSuppressed]
   );
 
   return { source, changeSource, canControl, registerPlayer, emitPlay, emitPause, emitSeek };
