@@ -1,7 +1,7 @@
 // apps/web/src/pages/Room/Room.jsx
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Copy, LogOut, Crown, Radio } from 'lucide-react';
+import { ArrowLeft, Copy, LogOut, Crown, Radio } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -61,7 +61,7 @@ export default function Room() {
   if (isLoading) {
     return (
       <div className="flex h-full">
-        <RoomsList />
+        <RoomsList compact />
         <div className="flex-1 animate-pulse bg-stage-raised" />
       </div>
     );
@@ -70,8 +70,8 @@ export default function Room() {
   if (!room) {
     return (
       <div className="flex h-full">
-        <RoomsList />
-        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+        <RoomsList compact />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
           <p className="font-display font-bold text-paper">Room not found</p>
           <p className="text-sm text-paper-muted">It may have ended, or you may not have access.</p>
           <Button onClick={() => navigate('/app')}>Back to your rooms</Button>
@@ -82,33 +82,46 @@ export default function Room() {
 
   return (
     <div className="flex h-full">
-      <RoomsList />
+      <RoomsList compact />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div>
-            <h1 className="font-display text-lg font-bold text-paper">{room.name}</h1>
-            <p className="text-xs text-paper-muted">
-              Hosted by {room.host?.username} &middot; {room.mode.replace('_', ' ').toLowerCase()}
-            </p>
+      {/* Phones and tablets: the whole page scrolls. Computers: panels fit the screen. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={() => navigate('/app')}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-paper-muted hover:bg-stage-overlay hover:text-paper lg:hidden"
+              aria-label="Back to rooms"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate font-display text-lg font-bold text-paper">{room.name}</h1>
+              <p className="truncate text-xs text-paper-muted">
+                Hosted by {room.host?.username} &middot; {room.mode.replace('_', ' ').toLowerCase()}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={copyCode}
               className="surface flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-xs text-paper hover:bg-stage-overlay"
             >
-              {room.code} <Copy className="h-3 w-3" />
+              <span className="hidden sm:inline">{room.code}</span>
+              <span className="sm:hidden">Code</span>
+              <Copy className="h-3 w-3" />
               {copied && <span className="text-ember">copied</span>}
             </button>
             <Button variant="ghost" size="sm" onClick={leave}>
-              <LogOut className="h-4 w-4" /> Leave
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Leave</span>
             </Button>
           </div>
         </div>
 
-        <div className="grid flex-1 gap-4 overflow-hidden p-4 md:grid-cols-[1fr,320px]">
-          <div className="flex flex-col gap-3 overflow-hidden">
-            <div className={`surface relative aspect-video w-full overflow-hidden rounded-xl2 ${
+        <div className="grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-4 lg:overflow-hidden">
+          <div className="flex min-w-0 flex-col gap-3 lg:overflow-hidden">
+            <div className={`surface relative aspect-video w-full overflow-hidden rounded-lg sm:rounded-xl2 ${
               source && room.mode === 'YOUTUBE'
                 ? 'bg-black'
                 : 'flex flex-col items-center justify-center gap-3'
@@ -119,7 +132,7 @@ export default function Room() {
                   <p className="font-display font-bold text-paper">
                     {room.mode.replace('_', ' ').toLowerCase()} sync coming soon
                   </p>
-                  <p className="max-w-xs text-center text-sm text-paper-muted">
+                  <p className="max-w-xs px-2 text-center text-sm text-paper-muted">
                     YouTube rooms are fully synced right now — chat still works great here.
                   </p>
                 </>
@@ -134,7 +147,7 @@ export default function Room() {
               ) : (
                 <>
                   <Radio className="h-8 w-8 text-ember" />
-                  <p className="font-display font-bold text-paper">
+                  <p className="px-2 text-center font-display font-bold text-paper">
                     Paste a YouTube link to get started
                   </p>
                 </>
@@ -144,8 +157,8 @@ export default function Room() {
             {room.mode === 'YOUTUBE' && canControl && <SourceBar onSetSource={changeSource} />}
           </div>
 
-          <div className="flex flex-col gap-4 overflow-hidden">
-            <VoiceBar roomId={roomId} currentUserId={currentUser?.id} />
+          <div className="flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-hidden">
+            <VoiceBar roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
 
             <div className="surface rounded-xl2 p-4">
               <p className="mb-3 text-sm font-semibold text-paper-muted">
@@ -168,7 +181,8 @@ export default function Room() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden">
+            {/* Phones: chat has its own fixed height. Computers: it fills the space that is left. */}
+            <div className="h-[60vh] min-h-[320px] overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1">
               <ChatPanel roomId={roomId} currentUserId={currentUser?.id} />
             </div>
           </div>

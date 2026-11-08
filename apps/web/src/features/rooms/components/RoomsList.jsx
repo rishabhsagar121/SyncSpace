@@ -6,15 +6,20 @@ import { useMyRooms } from '../hooks/useRooms';
 import CreateRoomModal from './CreateRoomModal';
 import JoinRoomModal from './JoinRoomModal';
 
-export default function RoomsList() {
+// compact: used inside a room. Narrow on computers, hidden on phones and tablets.
+export default function RoomsList({ compact = false }) {
   const navigate = useNavigate();
   const { roomId: activeRoomId } = useParams();
   const { data: rooms, isLoading } = useMyRooms();
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
 
+  const wrapperClass = compact
+    ? 'hidden h-full shrink-0 flex-col border-r border-border bg-stage lg:flex lg:w-56'
+    : 'flex h-full w-full shrink-0 flex-col border-r border-border bg-stage md:w-80';
+
   return (
-    <div className="flex h-screen w-80 shrink-0 flex-col border-r border-border bg-stage">
+    <div className={wrapperClass}>
       <div className="flex items-center justify-between px-4 py-5">
         <h2 className="font-display text-lg font-bold text-paper">Rooms</h2>
         <div className="flex gap-1">
