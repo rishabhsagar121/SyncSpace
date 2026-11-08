@@ -203,7 +203,7 @@ export function useRoomSync(roomId, { isHost, allowGuestControl }) {
   );
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || !socket) return;
 
     const onPlay = ({ positionMs }) => {
       syncedPlayingRef.current = true;
