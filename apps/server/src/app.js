@@ -13,6 +13,7 @@ import friendRoutes from './modules/friends/friend.routes.js';
 import roomRoutes from './modules/rooms/room.routes.js';
 import messageRoutes from './modules/messages/message.routes.js';
 import notificationRoutes from './modules/notifications/notification.routes.js';
+import musicRoutes from './modules/music/music.routes.js';
 
 export const app = express();
 // app.set('trust proxy', 1);
@@ -30,6 +31,7 @@ app.use('/api/v1/friends', friendRoutes);
 app.use('/api/v1/rooms', roomRoutes);
 app.use('/api/v1/messages', messageRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/music', musicRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });

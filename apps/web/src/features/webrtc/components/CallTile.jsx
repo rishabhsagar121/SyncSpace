@@ -1,9 +1,12 @@
 // apps/web/src/features/webrtc/components/CallTile.jsx
 import { useEffect, useRef } from 'react';
-import { MicOff, Pin, PinOff, ScreenShare } from 'lucide-react';
+import { Maximize, MicOff, Minimize, Pin, PinOff, ScreenShare } from 'lucide-react';
+import { useFullscreen } from '@/hooks/useFullscreen';
 
 export default function CallTile({ stream, label, showVideo, muted, sharing, isLocal, pinned, onPin }) {
   const videoRef = useRef(null);
+  const tileRef = useRef(null);
+  const fullscreen = useFullscreen(tileRef);
 
   // The <video> element also plays the person's audio, so it must stay mounted while in the call
   useEffect(() => {
@@ -15,14 +18,31 @@ export default function CallTile({ stream, label, showVideo, muted, sharing, isL
 
   const initial = (label || '?').trim().charAt(0).toUpperCase() || '?';
 
+  // iPhone can only open a <video> element itself in full screen
+  const iosVideoFullscreen =
+    typeof HTMLVideoElement !== 'undefined' && 'webkitEnterFullscreen' in HTMLVideoElement.prototype;
+  const canFullscreen = showVideo && (fullscreen.supported || iosVideoFullscreen);
+
+  const toggleFullscreen = () => {
+    if (fullscreen.supported) fullscreen.toggle();
+    else videoRef.current?.webkitEnterFullscreen?.();
+  };
+
+  const buttonVisibility = 'opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100';
+
   return (
-    <div className="group relative aspect-video overflow-hidden rounded-xl bg-stage-overlay">
+    <div
+      ref={tileRef}
+      className={`group relative aspect-video overflow-hidden bg-stage-overlay ${
+        fullscreen.active ? 'rounded-none bg-black' : 'rounded-xl'
+      }`}
+    >
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={isLocal} // never play my own microphone back to me
-        className={`h-full w-full ${sharing ? 'object-contain bg-black' : 'object-cover'} ${
+        className={`h-full w-full ${sharing || fullscreen.active ? 'object-contain bg-black' : 'object-cover'} ${
           isLocal && !sharing ? '-scale-x-100' : ''
         } ${showVideo ? '' : 'invisible'}`}
       />
@@ -41,11 +61,25 @@ export default function CallTile({ stream, label, showVideo, muted, sharing, isL
         <span className="truncate">{label}</span>
       </div>
 
+      {canFullscreen && (
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={fullscreen.active ? 'Exit full screen' : 'Full screen'}
+          title={fullscreen.active ? 'Exit full screen' : 'Full screen'}
+          className={`absolute right-12 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white ${
+            fullscreen.active ? 'opacity-100' : buttonVisibility
+          }`}
+        >
+          {fullscreen.active ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={onPin}
         aria-label={pinned ? 'Unpin' : 'Pin'}
-        className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+        className={`absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/60 text-white ${buttonVisibility}`}
       >
         {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
       </button>

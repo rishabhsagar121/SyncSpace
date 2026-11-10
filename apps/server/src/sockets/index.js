@@ -10,6 +10,7 @@ import { registerRoomHandlers, bridgeRoomDomainEvents } from './handlers/room.ha
 import { registerChatHandlers } from './handlers/chat.handler.js';
 import { registerSyncHandlers } from './handlers/sync.handler.js';
 import { registerWebrtcHandlers } from './handlers/webrtc.handler.js';
+import { registerMusicHandlers } from './handlers/music.handler.js';
 
 function userChannel(userId) {
   return `user:${userId}`;
@@ -34,9 +35,17 @@ export function initSockets(httpServer) {
     registerChatHandlers(io, socket);
     registerSyncHandlers(io, socket);
     registerWebrtcHandlers(io, socket);
+    registerMusicHandlers(io, socket);
   });
 
   bridgeRoomDomainEvents(io, domainEvents);
+
+  // Someone who leaves or is kicked stops receiving the room's music
+  const removeFromMusic = ({ roomId, userId }) => {
+    io.in(userChannel(userId)).socketsLeave(`music:${roomId}`);
+  };
+  domainEvents.on('room:member-left', removeFromMusic);
+  domainEvents.on('room:member-kicked', removeFromMusic);
 
   domainEvents.on('notification:created', ({ userId, notification }) => {
     io.to(userChannel(userId)).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notification);

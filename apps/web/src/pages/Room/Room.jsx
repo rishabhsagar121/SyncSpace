@@ -14,15 +14,19 @@ import { getSocket } from '@/lib/socket';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
+import LocalVideoPlayer from '@/features/sync/components/LocalVideoPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
 import VoiceBar from '@/features/webrtc/components/VoiceBar';
 import RoomsList from '@/features/rooms/components/RoomsList';
+import MusicPanel from '@/features/music/components/MusicPanel';
+import { useMusic } from '@/features/music/MusicProvider';
 
 export default function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const currentUser = useSelector(selectCurrentUser);
+  const music = useMusic();
   const { data: room, isLoading } = useRoom(roomId);
   const [copied, setCopied] = useState(false);
 
@@ -53,6 +57,7 @@ export default function Room() {
   };
 
   const leave = async () => {
+    if (music.room?.id === roomId) music.leaveMusic();
     await roomsApi.leave(roomId);
     queryClient.invalidateQueries({ queryKey: ['rooms', 'mine'] });
     navigate('/app');
@@ -120,41 +125,51 @@ export default function Room() {
         </div>
 
         <div className="grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-4 lg:overflow-hidden">
-          <div className="flex min-w-0 flex-col gap-3 lg:overflow-hidden">
-            <div className={`surface relative aspect-video w-full overflow-hidden rounded-lg sm:rounded-xl2 ${
-              source && room.mode === 'YOUTUBE'
-                ? 'bg-black'
-                : 'flex flex-col items-center justify-center gap-3'
-            }`}>
-              {room.mode !== 'YOUTUBE' ? (
-                <>
-                  <Radio className="h-8 w-8 text-ember" />
-                  <p className="font-display font-bold text-paper">
-                    {room.mode.replace('_', ' ').toLowerCase()} sync coming soon
-                  </p>
-                  <p className="max-w-xs px-2 text-center text-sm text-paper-muted">
-                    YouTube rooms are fully synced right now — chat still works great here.
-                  </p>
-                </>
-              ) : source ? (
-                <YouTubePlayer
-                  videoId={source.videoId}
-                  onRegister={registerPlayer}
-                  onPlay={emitPlay}
-                  onPause={emitPause}
-                  onSeek={emitSeek}
-                />
-              ) : (
-                <>
-                  <Radio className="h-8 w-8 text-ember" />
-                  <p className="px-2 text-center font-display font-bold text-paper">
-                    Paste a YouTube link to get started
-                  </p>
-                </>
-              )}
-            </div>
+          <div className="flex min-w-0 flex-col gap-3 lg:overflow-y-auto">
+            {room.mode === 'MUSIC' ? (
+              <MusicPanel room={room} />
+            ) : room.mode === 'LOCAL_VIDEO' ? (
+              <LocalVideoPlayer roomId={roomId} currentUserId={currentUser?.id} />
+            ) : (
+              <>
+                <div
+                  className={`surface relative aspect-video w-full overflow-hidden rounded-lg sm:rounded-xl2 ${
+                    source && room.mode === 'YOUTUBE'
+                      ? 'bg-black'
+                      : 'flex flex-col items-center justify-center gap-3'
+                  }`}
+                >
+                  {room.mode !== 'YOUTUBE' ? (
+                    <>
+                      <Radio className="h-8 w-8 text-ember" />
+                      <p className="font-display font-bold text-paper">
+                        {room.mode.replace('_', ' ').toLowerCase()} sync coming soon
+                      </p>
+                      <p className="max-w-xs px-2 text-center text-sm text-paper-muted">
+                        YouTube, Music and Local video rooms are fully synced right now — chat still works great here.
+                      </p>
+                    </>
+                  ) : source ? (
+                    <YouTubePlayer
+                      videoId={source.videoId}
+                      onRegister={registerPlayer}
+                      onPlay={emitPlay}
+                      onPause={emitPause}
+                      onSeek={emitSeek}
+                    />
+                  ) : (
+                    <>
+                      <Radio className="h-8 w-8 text-ember" />
+                      <p className="px-2 text-center font-display font-bold text-paper">
+                        Paste a YouTube link to get started
+                      </p>
+                    </>
+                  )}
+                </div>
 
-            {room.mode === 'YOUTUBE' && canControl && <SourceBar onSetSource={changeSource} />}
+                {room.mode === 'YOUTUBE' && canControl && <SourceBar onSetSource={changeSource} />}
+              </>
+            )}
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-hidden">
