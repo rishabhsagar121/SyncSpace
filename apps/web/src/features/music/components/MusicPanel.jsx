@@ -8,7 +8,11 @@ import { formatDuration } from '../format';
 const inputClass =
   'h-10 w-full rounded-full border border-border bg-stage-raised pl-9 pr-4 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-ember';
 
-const errText = (err, fallback) => err?.response?.data?.message || fallback;
+// No answer from the server at all, or the server's own message
+function errText(err, fallback) {
+  if (!err?.response) return "Can't reach the server right now. Check your internet connection and try again.";
+  return err.response.data?.message || fallback;
+}
 
 export default function MusicPanel({ room }) {
   const { room: active, state, connected, error, actions, joinMusic } = useMusic();
@@ -17,6 +21,7 @@ export default function MusicPanel({ room }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [adding, setAdding] = useState(null);
@@ -40,15 +45,19 @@ export default function MusicPanel({ room }) {
       return;
     }
     setSearching(true);
+    setSlow(false);
     setSearchError('');
+    const slowTimer = setTimeout(() => setSlow(true), 5000);
     try {
       setResults(await musicApi.search(q));
       setSearched(true);
     } catch (err) {
       setResults([]);
       setSearched(false);
-      setSearchError(errText(err, 'Search failed. Check your connection and try again.'));
+      setSearchError(errText(err, 'Search failed. Please try again.'));
     } finally {
+      clearTimeout(slowTimer);
+      setSlow(false);
       setSearching(false);
     }
   };
@@ -117,6 +126,12 @@ export default function MusicPanel({ room }) {
         </Button>
       </form>
 
+      {searching && (
+        <p className="flex items-center gap-2 text-xs text-paper-muted">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {slow ? 'Still searching. The server may be waking up, this can take up to a minute…' : 'Searching…'}
+        </p>
+      )}
       {searchError && <p className="text-sm text-red-400">{searchError}</p>}
       {searched && !searching && results.length === 0 && (
         <p className="text-sm text-paper-muted">No playable songs found. Try different words.</p>
@@ -226,12 +241,6 @@ export default function MusicPanel({ room }) {
           })}
         </div>
       </div>
-
-      {searching && (
-        <p className="flex items-center gap-2 text-xs text-paper-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
-        </p>
-      )}
     </div>
   );
 }

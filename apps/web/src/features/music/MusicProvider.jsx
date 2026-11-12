@@ -6,6 +6,7 @@ const MusicContext = createContext(null);
 const EMPTY_STATE = { queue: [], index: -1, playing: false, positionNowMs: 0, version: 0, receivedAt: 0 };
 const REFRESH_MS = 15000; // small check with the server to correct drift
 const VOLUME_KEY = 'syncspace:music:volume';
+const JOIN_RETRIES = 6;
 
 function readVolume() {
   try {
@@ -26,6 +27,7 @@ export function MusicProvider({ children }) {
 
   const versionRef = useRef(0);
   const roomIdRef = useRef(null);
+  const rejoinRef = useRef(null);
 
   useEffect(() => {
     roomIdRef.current = room?.id ?? null;
@@ -60,31 +62,48 @@ export function MusicProvider({ children }) {
     []
   );
 
-  // Join the room's music channel, and again after every reconnect
+  // Join the room's music channel: again after every reconnect, and again if the first try failed
   useEffect(() => {
     if (!room?.id) return undefined;
     const roomId = room.id;
     const socket = getSocket();
+    let cancelled = false;
+    let retryTimer = null;
+    let attempts = 0;
 
     versionRef.current = 0;
     setState(EMPTY_STATE);
     setError(null);
 
     const join = async () => {
+      clearTimeout(retryTimer);
       const res = await request('music:join', { roomId });
+      if (cancelled) return res;
+
       if (res?.ok) {
+        attempts = 0;
         setConnected(true);
         setError(null);
         applyState(res.state, { force: true });
-      } else {
-        setConnected(false);
-        setError(res?.message || 'Could not join the music room.');
+        return res;
       }
+
+      setConnected(false);
+      setError(res?.message || 'Could not join the music room.');
+      const permanent = /not a member/i.test(res?.message || '');
+      if (!permanent && attempts < JOIN_RETRIES) {
+        attempts += 1;
+        retryTimer = setTimeout(join, Math.min(1000 * 2 ** attempts, 10000));
+      }
+      return res;
     };
+    rejoinRef.current = join;
 
     const refresh = async () => {
       const res = await request('music:get-state', { roomId });
+      if (cancelled) return;
       if (res?.ok) applyState(res.state);
+      else if (/join the music room first/i.test(res?.message || '')) join();
     };
 
     const onState = (payload) => applyState(payload);
@@ -97,7 +116,10 @@ export function MusicProvider({ children }) {
     const timer = setInterval(refresh, REFRESH_MS);
 
     return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
       clearInterval(timer);
+      rejoinRef.current = null;
       socket.off('connect', join);
       socket.off('disconnect', onDisconnect);
       socket.off('music:state', onState);
@@ -109,7 +131,15 @@ export function MusicProvider({ children }) {
     async (name, extra = {}) => {
       const roomId = roomIdRef.current;
       if (!roomId) return { ok: false, message: 'Not listening in a room.' };
-      const res = await request(`music:${name}`, { roomId, ...extra });
+
+      let res = await request(`music:${name}`, { roomId, ...extra });
+
+      // the server forgot this connection (for example after a reconnect): join again and retry once
+      if (!res?.ok && /join the music room first/i.test(res?.message || '') && rejoinRef.current) {
+        const joined = await rejoinRef.current();
+        if (joined?.ok) res = await request(`music:${name}`, { roomId, ...extra });
+      }
+
       if (res?.ok) {
         setError(null);
         applyState(res.state);

@@ -1,12 +1,13 @@
 // apps/web/src/pages/Room/Room.jsx
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, Copy, LogOut, Crown, Radio } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, ChevronDown, ChevronUp, Copy, Crown, LogOut, Music, Radio } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
+import ResizeHandle from '@/components/ui/ResizeHandle';
 import { useRoom } from '@/features/rooms/hooks/useRooms';
 import { roomsApi } from '@/features/rooms/api/roomsApi';
 import { selectCurrentUser } from '@/features/auth/authSlice';
@@ -14,12 +15,40 @@ import { getSocket } from '@/lib/socket';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
-import LocalVideoPlayer from '@/features/sync/components/LocalVideoPlayer';
+// import StreamRoomPlayer from '@/features/sync/components/StreamRoomPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
 import VoiceBar from '@/features/webrtc/components/VoiceBar';
 import RoomsList from '@/features/rooms/components/RoomsList';
 import MusicPanel from '@/features/music/components/MusicPanel';
 import { useMusic } from '@/features/music/MusicProvider';
+
+const SIDE_KEY = 'syncspace:room:sideWidth';
+const CHAT_HEIGHT_KEY = 'syncspace:room:chatHeight';
+const HIDE_MUSIC_KEY = 'syncspace:room:hideMusic';
+const DEFAULT_SIDE = 320;
+const MIN_SIDE = 280;
+const MIN_CHAT_HEIGHT = 240;
+
+const maxSide = () => Math.max(400, Math.min(760, Math.round(window.innerWidth * 0.55)));
+const maxChatHeight = () => Math.max(320, Math.round(window.innerHeight * 0.9));
+
+function readNumber(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeValue(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export default function Room() {
   const { roomId } = useParams();
@@ -29,6 +58,11 @@ export default function Room() {
   const music = useMusic();
   const { data: room, isLoading } = useRoom(roomId);
   const [copied, setCopied] = useState(false);
+
+  const [sideWidth, setSideWidth] = useState(() => readNumber(SIDE_KEY, DEFAULT_SIDE));
+  const [chatHeight, setChatHeight] = useState(() => readNumber(CHAT_HEIGHT_KEY, 0)); // 0 = default height
+  const [musicHidden, setMusicHidden] = useState(() => readNumber(HIDE_MUSIC_KEY, 0) === 1);
+  const chatRef = useRef(null);
 
   // Everyone in the room can control playback
   const { source, changeSource, canControl, registerPlayer, emitPlay, emitPause, emitSeek } =
@@ -48,6 +82,22 @@ export default function Room() {
       socket.emit('room:leave', { roomId });
     };
   }, [roomId]);
+
+  const changeSide = (value) => {
+    setSideWidth(value);
+    writeValue(SIDE_KEY, value);
+  };
+
+  const changeChatHeight = (value) => {
+    setChatHeight(value);
+    writeValue(CHAT_HEIGHT_KEY, value);
+  };
+
+  const toggleMusic = () => {
+    const next = !musicHidden;
+    setMusicHidden(next);
+    writeValue(HIDE_MUSIC_KEY, next ? 1 : 0);
+  };
 
   const copyCode = () => {
     if (!room) return;
@@ -84,6 +134,12 @@ export default function Room() {
       </div>
     );
   }
+
+  const isMusicRoom = room.mode === 'MUSIC';
+  const showLeft = !(isMusicRoom && musicHidden); // the music panel stays mounted when hidden, so nothing is lost
+  const effectiveSide = Math.min(Math.max(sideWidth, MIN_SIDE), maxSide());
+  const chatHeightCss = chatHeight > 0 ? `${Math.min(chatHeight, maxChatHeight())}px` : '60vh';
+  const nowPlaying = music.room?.id === roomId ? music.state.queue[music.state.index] : null;
 
   return (
     <div className="flex h-full">
@@ -124,12 +180,40 @@ export default function Room() {
           </div>
         </div>
 
-        <div className="grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-4 lg:overflow-hidden">
-          <div className="flex min-w-0 flex-col gap-3 lg:overflow-y-auto">
-            {room.mode === 'MUSIC' ? (
+        {/* Music: show or hide the song section. Hiding it never stops the music. */}
+        {isMusicRoom && (
+          <div className="px-2 pt-2 sm:px-4 sm:pt-4">
+            <div className="surface flex items-center gap-3 rounded-xl2 px-3 py-2">
+              <Music className="h-4 w-4 shrink-0 text-ember" />
+              <p className="min-w-0 flex-1 truncate text-sm text-paper">
+                {nowPlaying
+                  ? `${music.state.playing ? 'Playing' : 'Paused'}: ${nowPlaying.title}`
+                  : 'Music · nothing playing yet'}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleMusic}
+                title={musicHidden ? 'Show the song section' : 'Hide the song section (music keeps playing)'}
+              >
+                {musicHidden ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                {musicHidden ? 'Show music' : 'Hide music'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{ '--side-w': `${effectiveSide}px`, '--chat-h': chatHeightCss }}
+          className={`grid gap-3 p-2 sm:p-4 lg:flex-1 lg:gap-0 lg:overflow-hidden ${
+            showLeft ? 'lg:grid-cols-[minmax(0,1fr)_16px_var(--side-w)]' : 'lg:grid-cols-[minmax(0,1fr)]'
+          }`}
+        >
+          <div className={`min-w-0 flex-col gap-3 lg:overflow-y-auto ${showLeft ? 'flex' : 'hidden'}`}>
+            {isMusicRoom ? (
               <MusicPanel room={room} />
             ) : room.mode === 'LOCAL_VIDEO' ? (
-              <LocalVideoPlayer roomId={roomId} currentUserId={currentUser?.id} />
+              <p className="surface rounded-xl2 p-4 text-sm text-paper-muted">Local video streaming is not installed yet.</p>
             ) : (
               <>
                 <div
@@ -172,7 +256,26 @@ export default function Room() {
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-hidden">
+          {/* Computers: drag this bar to make the chat side wider or narrower */}
+          {showLeft && (
+            <ResizeHandle
+              direction="horizontal"
+              className="hidden lg:flex"
+              label="Resize the chat panel"
+              getValue={() => effectiveSide}
+              onChange={changeSide}
+              min={MIN_SIDE}
+              max={maxSide}
+              invert
+              onReset={() => changeSide(DEFAULT_SIDE)}
+            />
+          )}
+
+          <div
+            className={`flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-hidden ${
+              showLeft ? '' : 'lg:mx-auto lg:w-full lg:max-w-4xl'
+            }`}
+          >
             <VoiceBar roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
 
             <div className="surface rounded-xl2 p-4">
@@ -196,8 +299,23 @@ export default function Room() {
               </div>
             </div>
 
-            {/* Phones: chat has its own fixed height. Computers: it fills the space that is left. */}
-            <div className="h-[60vh] min-h-[320px] overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1">
+            {/* Phones and tablets: drag this bar up or down to make the chat taller or shorter */}
+            <ResizeHandle
+              direction="vertical"
+              className="flex lg:hidden"
+              label="Resize the chat height"
+              getValue={() => chatRef.current?.offsetHeight ?? 400}
+              onChange={changeChatHeight}
+              min={MIN_CHAT_HEIGHT}
+              max={maxChatHeight}
+              invert
+              onReset={() => changeChatHeight(0)}
+            />
+
+            <div
+              ref={chatRef}
+              className="h-[var(--chat-h)] min-h-[240px] overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1"
+            >
               <ChatPanel roomId={roomId} currentUserId={currentUser?.id} />
             </div>
           </div>
