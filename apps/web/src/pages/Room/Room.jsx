@@ -15,7 +15,6 @@ import { getSocket } from '@/lib/socket';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
-// import StreamRoomPlayer from '@/features/sync/components/StreamRoomPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
 import VoiceBar from '@/features/webrtc/components/VoiceBar';
 import RoomsList from '@/features/rooms/components/RoomsList';

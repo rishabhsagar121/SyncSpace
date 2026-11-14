@@ -8,6 +8,44 @@ const callChannel = (roomId) => `call:${roomId}`;
 const userChannel = (userId) => `user:${userId}`;
 const onlineKey = (roomId) => `room:${roomId}:online`;
 
+// Who is online in a room. Kept in Redis when it is connected, and always in memory,
+// so joining a room never fails just because Redis is not running.
+const memoryOnline = new Map(); // roomId -> Set of userIds
+
+async function onlineAdd(roomId, userId) {
+  if (!memoryOnline.has(roomId)) memoryOnline.set(roomId, new Set());
+  memoryOnline.get(roomId).add(userId);
+  if (redisClient?.isReady) {
+    try {
+      await redisClient.sAdd(onlineKey(roomId), userId);
+    } catch {
+      /* memory keeps working */
+    }
+  }
+}
+
+async function onlineRemove(roomId, userId) {
+  memoryOnline.get(roomId)?.delete(userId);
+  if (redisClient?.isReady) {
+    try {
+      await redisClient.sRem(onlineKey(roomId), userId);
+    } catch {
+      /* memory keeps working */
+    }
+  }
+}
+
+async function onlineList(roomId) {
+  if (redisClient?.isReady) {
+    try {
+      return await redisClient.sMembers(onlineKey(roomId));
+    } catch {
+      /* fall back to memory */
+    }
+  }
+  return [...(memoryOnline.get(roomId) ?? [])];
+}
+
 export function registerRoomHandlers(io, socket) {
   socket.on(SOCKET_EVENTS.ROOM_JOIN, async ({ roomId } = {}, ack) => {
     try {
@@ -20,7 +58,7 @@ export function registerRoomHandlers(io, socket) {
 
       socket.join(roomChannel(roomId));
       socket.data.roomId = roomId;
-      await redisClient.sAdd(onlineKey(roomId), socket.userId);
+      await onlineAdd(roomId, socket.userId);
 
       socket.to(roomChannel(roomId)).emit(SOCKET_EVENTS.ROOM_MEMBER_JOINED, {
         roomId,
@@ -30,7 +68,7 @@ export function registerRoomHandlers(io, socket) {
       ack?.({
         ok: true,
         role: membership.role,
-        onlineMemberIds: await redisClient.sMembers(onlineKey(roomId)),
+        onlineMemberIds: await onlineList(roomId),
       });
     } catch (err) {
       logger.error(`ROOM_JOIN failed: ${err.message}`);
@@ -41,7 +79,7 @@ export function registerRoomHandlers(io, socket) {
 
   const leave = async (roomId) => {
     socket.leave(roomChannel(roomId));
-    await redisClient.sRem(onlineKey(roomId), socket.userId);
+    await onlineRemove(roomId, socket.userId);
     socket.data.roomId = null;
     io.to(roomChannel(roomId)).emit(SOCKET_EVENTS.ROOM_MEMBER_LEFT, { roomId, userId: socket.userId });
   };
@@ -74,9 +112,7 @@ export function bridgeRoomDomainEvents(io, domainEvents) {
     io.to(callChannel(roomId)).emit(SOCKET_EVENTS.WEBRTC_PEER_LEFT, { roomId, peerId: userId });
 
     // Keep the "who's online in this room" list accurate
-    redisClient
-      .sRem(onlineKey(roomId), userId)
-      .catch((err) => logger.error(`Kick cleanup failed: ${err.message}`));
+    onlineRemove(roomId, userId).catch((err) => logger.error(`Kick cleanup failed: ${err.message}`));
 
     io.to(roomChannel(roomId)).emit(SOCKET_EVENTS.ROOM_MEMBER_LEFT, { roomId, userId });
   });
