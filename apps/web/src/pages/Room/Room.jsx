@@ -15,7 +15,7 @@ import { getSocket } from '@/lib/socket';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
-import StreamRoomPlayer from '@/features/sync/components/StreamRoomPlayer';
+import LocalVideoPlayer from '@/features/sync/components/LocalVideoPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
 import VoiceBar from '@/features/webrtc/components/VoiceBar';
 import RoomsList from '@/features/rooms/components/RoomsList';
@@ -213,7 +213,7 @@ export default function Room() {
             {isMusicRoom ? (
               <MusicPanel room={room} />
             ) : room.mode === 'LOCAL_VIDEO' ? (
-              <StreamRoomPlayer roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
+              <LocalVideoPlayer roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
             ) : (
               <>
                 <div
