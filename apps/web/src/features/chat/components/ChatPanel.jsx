@@ -437,6 +437,8 @@ export default function ChatPanel({ roomId, currentUserId }) {
 
           <input
             ref={textInputRef}
+            onFocus={() => window.dispatchEvent(new CustomEvent('syncspace:chat-focus', { detail: true }))}
+            onBlur={() => window.dispatchEvent(new CustomEvent('syncspace:chat-focus', { detail: false }))}
             value={draft}
             onChange={(e) => {
               setDraft(e.target.value);

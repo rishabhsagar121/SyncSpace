@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Maximize, Minimize, Music, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Maximize,
+  Minimize,
+  Music,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { useMusic } from '../MusicProvider';
 import { expectedPositionMs, formatDuration } from '../format';
 import { useFullscreen } from '@/hooks/useFullscreen';
@@ -29,9 +42,21 @@ const SEEK_TOLERANCE_MS = 1200;
 const DRIFT_CHECK_MS = 5000;
 const GESTURE_CHECK_MS = 2500;
 const FS_CONTROLS_HIDE_MS = 3000;
+const TYPING_RESTORE_MS = 300;
+const COLLAPSE_KEY = 'syncspace:music:dockCollapsed';
 
 const roundBtn =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stage-overlay text-paper transition-colors hover:bg-white/10 disabled:opacity-40';
+const smallBtn =
+  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stage-overlay text-paper transition-colors hover:bg-white/10 disabled:opacity-40';
+
+function readCollapsed() {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function DockBody() {
   const { room, state, connected, error, volume, setVolume, actions, leaveMusic } = useMusic();
@@ -43,6 +68,7 @@ function DockBody() {
   const loadedRef = useRef(null); // the video currently loaded in the player
   const gestureTimerRef = useRef(null);
   const hideTimerRef = useRef(null);
+  const typingTimerRef = useRef(null);
   const stateRef = useRef(state);
   const actionsRef = useRef(actions);
   const volumeRef = useRef(volume);
@@ -54,11 +80,47 @@ function DockBody() {
   const [playerError, setPlayerError] = useState(null);
   const [dragMs, setDragMs] = useState(null);
   const [showFsControls, setShowFsControls] = useState(true);
+  const [collapsed, setCollapsedState] = useState(readCollapsed);
+  const [typing, setTyping] = useState(false); // phones and tablets: hide while typing in the chat
   const [, setTick] = useState(0);
 
   stateRef.current = state;
   actionsRef.current = actions;
   volumeRef.current = volume;
+
+  const isCollapsed = collapsed || typing;
+
+  const setCollapsed = useCallback((value) => {
+    setCollapsedState(value);
+    try {
+      localStorage.setItem(COLLAPSE_KEY, value ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+
+  const showPlayer = useCallback(() => {
+    setTyping(false);
+    setCollapsed(false);
+  }, [setCollapsed]);
+
+  // The chat box tells us when you start and stop typing
+  useEffect(() => {
+    const small = window.matchMedia('(max-width: 1023px)');
+    const onChatFocus = (e) => {
+      clearTimeout(typingTimerRef.current);
+      if (e.detail) {
+        if (small.matches) setTyping(true);
+      } else {
+        typingTimerRef.current = setTimeout(() => setTyping(false), TYPING_RESTORE_MS);
+      }
+    };
+    window.addEventListener('syncspace:chat-focus', onChatFocus);
+    return () => {
+      window.removeEventListener('syncspace:chat-focus', onChatFocus);
+      clearTimeout(typingTimerRef.current);
+    };
+  }, []);
 
   // In full screen the controls show on mouse move / touch and hide again after a few seconds
   const wakeControls = useCallback(() => {
@@ -263,6 +325,7 @@ function DockBody() {
   const positionMs = dragMs ?? expectedPositionMs(state);
   const toggle = () => (state.playing ? actions.pause() : actions.play());
   const hasNext = state.index + 1 < state.queue.length;
+  const statusText = !connected ? 'Reconnecting…' : state.playing ? 'Playing together' : 'Paused';
 
   const commitSeek = () => {
     if (dragMs === null) return;
@@ -281,35 +344,41 @@ function DockBody() {
   };
 
   const message = error || playerError;
+  const needsTap = blocked && !!item && state.playing;
 
   return (
     <div className="shrink-0 border-t border-border bg-stage-raised">
-      <div className="flex">
-        {/* The video must stay visible (YouTube's rules), so it is never hidden */}
+      <div className={isCollapsed ? 'flex items-center gap-2 px-3 py-1.5' : 'flex'}>
+        {/* The video player stays mounted when hidden, so the music keeps playing without a break */}
         <div
           ref={videoWrapRef}
+          aria-hidden={isCollapsed}
           onMouseMove={fullscreen.active ? wakeControls : undefined}
           onTouchStart={fullscreen.active ? wakeControls : undefined}
-          className="relative h-[200px] w-[200px] shrink-0 bg-black sm:w-[356px]"
+          className={
+            isCollapsed
+              ? 'fixed -left-[9999px] top-0 h-[112px] w-[200px] bg-black'
+              : 'relative min-h-[104px] w-[104px] shrink-0 self-stretch bg-black sm:min-h-[112px] sm:w-[200px]'
+          }
         >
-          <div ref={containerRef} className="h-full w-full" />
+          <div ref={containerRef} className="absolute inset-0" />
 
-          {item && fullscreen.supported && (
+          {item && fullscreen.supported && !isCollapsed && (
             <button
               type="button"
               onClick={fullscreen.toggle}
               aria-label={fullscreen.active ? 'Exit full screen' : 'Full screen'}
               title={fullscreen.active ? 'Exit full screen' : 'Full screen'}
-              className="absolute right-2 top-2 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+              className="absolute right-1.5 top-1.5 z-30 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
             >
               {fullscreen.active ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </button>
           )}
 
           {!item && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black px-3 text-center">
-              <Music className="h-7 w-7 text-ember" />
-              <p className="text-xs text-paper-muted">Nothing playing. Add a song in the room&apos;s Music panel.</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black px-2 text-center">
+              <Music className="h-6 w-6 text-ember" />
+              <p className="hidden text-[11px] text-paper-muted sm:block">Nothing playing</p>
             </div>
           )}
 
@@ -322,14 +391,14 @@ function DockBody() {
             />
           )}
 
-          {blocked && item && state.playing && (
+          {needsTap && (
             <button
               type="button"
               onClick={tapToListen}
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/75 text-white"
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-black/75 text-white"
             >
-              <Play className="h-8 w-8 fill-current" />
-              <span className="text-sm font-semibold">Tap to listen</span>
+              <Play className="h-7 w-7 fill-current" />
+              <span className="text-xs font-semibold">Tap to listen</span>
             </button>
           )}
 
@@ -409,8 +478,64 @@ function DockBody() {
           )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 overflow-hidden p-3">
-          <div className="min-w-0">
+        {isCollapsed ? (
+          /* Hidden: one thin bar, the music keeps playing */
+          <>
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                !connected ? 'bg-red-400' : state.playing ? 'animate-pulse bg-ember' : 'bg-paper-muted'
+              }`}
+            />
+            <Music className="h-4 w-4 shrink-0 text-ember" />
+            <p className="min-w-0 flex-1 truncate text-xs font-medium text-paper">
+              {item ? item.title : 'Nothing playing'}
+            </p>
+            {needsTap && (
+              <button
+                type="button"
+                onClick={tapToListen}
+                className="shrink-0 rounded-full bg-ember-gradient px-3 py-1 text-xs font-semibold text-white"
+              >
+                Tap to listen
+              </button>
+            )}
+            <button type="button" onClick={actions.prev} disabled={!item} className={smallBtn} aria-label="Previous song">
+              <SkipBack className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={toggle}
+              disabled={!state.queue.length}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ember-gradient text-white disabled:opacity-40"
+              aria-label={state.playing ? 'Pause' : 'Play'}
+            >
+              {state.playing ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
+            </button>
+            <button type="button" onClick={actions.next} disabled={!hasNext} className={smallBtn} aria-label="Next song">
+              <SkipForward className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={showPlayer}
+              className={smallBtn}
+              aria-label="Show the player"
+              title="Show the player"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={leaveMusic}
+              className="shrink-0 rounded-full p-1 text-paper-muted hover:bg-white/10 hover:text-paper"
+              aria-label="Stop and leave music"
+              title="Stop and leave music"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </>
+        ) : (
+          /* Shown: a compact player */
+          <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 overflow-hidden p-2 sm:p-3">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-paper-muted">
               <span
                 className={`h-2 w-2 shrink-0 rounded-full ${
@@ -418,96 +543,90 @@ function DockBody() {
                 }`}
               />
               <span className="truncate">
-                {!connected ? 'Reconnecting…' : state.playing ? 'Playing together' : 'Paused'} · {room.name}
+                {statusText} · {room.name}
               </span>
               <button
                 type="button"
+                onClick={() => setCollapsed(true)}
+                className="ml-auto flex shrink-0 items-center gap-1 rounded-full px-2 py-1 normal-case text-paper-muted hover:bg-white/10 hover:text-paper"
+                title="Hide the player (the music keeps playing)"
+                aria-label="Hide the player"
+              >
+                <ChevronDown className="h-4 w-4" />
+                <span className="text-xs">Hide</span>
+              </button>
+              <button
+                type="button"
                 onClick={leaveMusic}
-                className="ml-auto shrink-0 rounded-full p-1 text-paper-muted hover:bg-white/10 hover:text-paper"
+                className="shrink-0 rounded-full p-1 text-paper-muted hover:bg-white/10 hover:text-paper"
                 aria-label="Stop and leave music"
                 title="Stop and leave music"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1 line-clamp-2 overflow-hidden text-sm font-semibold text-paper">
-              {item ? item.title : 'Nothing playing'}
-            </p>
-            <p className="hidden truncate text-xs text-paper-muted sm:block">{item?.channel}</p>
-          </div>
 
-          <div>
-            <input
-              type="range"
-              min={0}
-              max={durationMs || 1}
-              step={1000}
-              value={Math.min(positionMs, durationMs || 1)}
-              disabled={!item}
-              onChange={(e) => setDragMs(Number(e.target.value))}
-              onPointerUp={commitSeek}
-              onKeyUp={commitSeek}
-              aria-label="Song position"
-              className="h-1 w-full cursor-pointer accent-ember"
-            />
-            <div className="mt-0.5 flex justify-between text-[11px] text-paper-muted">
-              <span>{formatDuration(positionMs / 1000)}</span>
-              <span>{formatDuration(item?.durationSec || 0)}</span>
-            </div>
-          </div>
+            <p className="truncate text-sm font-semibold text-paper">{item ? item.title : 'Nothing playing'}</p>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={actions.prev}
-              disabled={!item}
-              className={roundBtn}
-              aria-label="Previous song"
-            >
-              <SkipBack className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={toggle}
-              disabled={!state.queue.length}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ember-gradient text-white disabled:opacity-40"
-              aria-label={state.playing ? 'Pause' : 'Play'}
-            >
-              {state.playing ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
-            </button>
-            <button
-              type="button"
-              onClick={actions.next}
-              disabled={!hasNext}
-              className={roundBtn}
-              aria-label="Next song"
-            >
-              <SkipForward className="h-4 w-4" />
-            </button>
-
-            <div className="ml-auto hidden items-center gap-2 sm:flex">
-              <button
-                type="button"
-                onClick={() => setVolume(volume === 0 ? 80 : 0)}
-                className="text-paper-muted hover:text-paper"
-                aria-label={volume === 0 ? 'Unmute' : 'Mute'}
-              >
-                {volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              </button>
+            <div className="flex items-center gap-2 text-[11px] text-paper-muted">
+              <span className="w-9 shrink-0 text-right tabular-nums">{formatDuration(positionMs / 1000)}</span>
               <input
                 type="range"
                 min={0}
-                max={100}
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                aria-label="Volume (only for you)"
-                className="h-1 w-24 cursor-pointer accent-ember"
+                max={durationMs || 1}
+                step={1000}
+                value={Math.min(positionMs, durationMs || 1)}
+                disabled={!item}
+                onChange={(e) => setDragMs(Number(e.target.value))}
+                onPointerUp={commitSeek}
+                onKeyUp={commitSeek}
+                aria-label="Song position"
+                className="h-1 min-w-0 flex-1 cursor-pointer accent-ember"
               />
+              <span className="w-9 shrink-0 tabular-nums">{formatDuration(item?.durationSec || 0)}</span>
             </div>
-          </div>
 
-          {message && <p className="truncate text-xs text-red-400">{message}</p>}
-        </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={actions.prev} disabled={!item} className={roundBtn} aria-label="Previous song">
+                <SkipBack className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={toggle}
+                disabled={!state.queue.length}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ember-gradient text-white disabled:opacity-40"
+                aria-label={state.playing ? 'Pause' : 'Play'}
+              >
+                {state.playing ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
+              </button>
+              <button type="button" onClick={actions.next} disabled={!hasNext} className={roundBtn} aria-label="Next song">
+                <SkipForward className="h-4 w-4" />
+              </button>
+
+              <div className="ml-auto hidden items-center gap-2 sm:flex">
+                <button
+                  type="button"
+                  onClick={() => setVolume(volume === 0 ? 80 : 0)}
+                  className="text-paper-muted hover:text-paper"
+                  aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+                >
+                  {volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                  aria-label="Volume (only for you)"
+                  className="h-1 w-24 cursor-pointer accent-ember"
+                />
+              </div>
+            </div>
+
+            {message && <p className="truncate text-xs text-red-400">{message}</p>}
+          </div>
+        )}
       </div>
     </div>
   );

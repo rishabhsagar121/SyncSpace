@@ -15,6 +15,7 @@ import { getSocket } from '@/lib/socket';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
+import StreamRoomPlayer from '@/features/sync/components/StreamRoomPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
 import VoiceBar from '@/features/webrtc/components/VoiceBar';
 import RoomsList from '@/features/rooms/components/RoomsList';
@@ -204,7 +205,7 @@ export default function Room() {
 
         <div
           style={{ '--side-w': `${effectiveSide}px`, '--chat-h': chatHeightCss }}
-          className={`grid gap-3 p-2 sm:p-4 lg:flex-1 lg:gap-0 lg:overflow-hidden ${
+          className={`grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden ${
             showLeft ? 'lg:grid-cols-[minmax(0,1fr)_16px_var(--side-w)]' : 'lg:grid-cols-[minmax(0,1fr)]'
           }`}
         >
@@ -212,7 +213,7 @@ export default function Room() {
             {isMusicRoom ? (
               <MusicPanel room={room} />
             ) : room.mode === 'LOCAL_VIDEO' ? (
-              <p className="surface rounded-xl2 p-4 text-sm text-paper-muted">Local video streaming is not installed yet.</p>
+              <StreamRoomPlayer roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
             ) : (
               <>
                 <div
@@ -270,29 +271,31 @@ export default function Room() {
             />
           )}
 
+          {/* The right side scrolls on computers, so the chat can always be reached */}
           <div
-            className={`flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-hidden ${
+            className={`flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-y-auto ${
               showLeft ? '' : 'lg:mx-auto lg:w-full lg:max-w-4xl'
             }`}
           >
-            <VoiceBar roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
+            <div className="shrink-0">
+              <VoiceBar roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
+            </div>
 
-            <div className="surface rounded-xl2 p-4">
-              <p className="mb-3 text-sm font-semibold text-paper-muted">
+            <div className="surface shrink-0 rounded-xl2 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paper-muted">
                 In the room &middot; {room.members.length}
               </p>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap gap-2">
                 {room.members.map((m) => (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <Avatar name={m.user.username} src={m.user.profile?.avatarUrl} size="sm" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-paper">{m.user.username}</p>
-                      {m.role !== 'MEMBER' && (
-                        <p className="flex items-center gap-1 text-xs text-paper-muted">
-                          <Crown className="h-3 w-3 text-ember" /> {m.role.replace('_', ' ').toLowerCase()}
-                        </p>
-                      )}
-                    </div>
+                  <div key={m.id} className="flex items-center gap-2 rounded-full bg-stage-overlay py-1 pl-1 pr-3">
+                    <Avatar name={m.user.username} src={m.user.profile?.avatarUrl} size={24} />
+                    <span className="max-w-[120px] truncate text-xs text-paper">{m.user.username}</span>
+                    {m.role !== 'MEMBER' && (
+                      <Crown
+                        className="h-3 w-3 shrink-0 text-ember"
+                        aria-label={m.role.replace('_', ' ').toLowerCase()}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -313,7 +316,7 @@ export default function Room() {
 
             <div
               ref={chatRef}
-              className="h-[var(--chat-h)] min-h-[240px] overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1"
+              className="h-[var(--chat-h)] min-h-[320px] overflow-hidden lg:h-auto lg:min-h-[360px] lg:flex-1"
             >
               <ChatPanel roomId={roomId} currentUserId={currentUser?.id} />
             </div>
