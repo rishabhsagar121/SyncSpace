@@ -7,6 +7,26 @@ const senderSelect = {
   profile: { select: { displayName: true, avatarUrl: true } },
 };
 
+// The message being replied to, shown as a small quote above the reply
+const replySelect = {
+  id: true,
+  content: true,
+  type: true,
+  fileName: true,
+  sender: { select: { username: true, profile: { select: { displayName: true } } } },
+};
+
+const shapeReply = (reply) =>
+  reply
+    ? {
+        id: reply.id,
+        content: reply.content,
+        type: reply.type,
+        fileName: reply.fileName,
+        senderName: reply.sender?.profile?.displayName || reply.sender?.username || 'Someone',
+      }
+    : null;
+
 const MAX_LENGTH = 1000;
 const RATE_LIMIT = { count: 5, windowMs: 5000 };
 
@@ -27,7 +47,7 @@ export function registerChatHandlers(io, socket) {
 
   const inRoom = (roomId) => !!roomId && socket.rooms.has(roomChannel(roomId));
 
-  socket.on('chat:send', async ({ roomId, content } = {}, ack) => {
+  socket.on('chat:send', async ({ roomId, content, replyToId } = {}, ack) => {
     try {
       const text = String(content || '').trim().slice(0, MAX_LENGTH);
       if (!text) return ack?.({ ok: false, message: 'Message is empty.' });
@@ -43,14 +63,25 @@ export function registerChatHandlers(io, socket) {
       }
       if (membership.isMuted) return ack?.({ ok: false, message: 'You are muted by the host.' });
 
+      // A reply must point at a message from this same room
+      let replyId = null;
+      if (typeof replyToId === 'string' && replyToId) {
+        const original = await prisma.message.findFirst({
+          where: { id: replyToId, roomId, deletedAt: null },
+          select: { id: true },
+        });
+        replyId = original?.id ?? null;
+      }
+
       const message = await prisma.message.create({
-        data: { roomId, senderId: userId(), content: text },
-        include: { sender: { select: senderSelect } },
+        data: { roomId, senderId: userId(), content: text, ...(replyId ? { replyToId: replyId } : {}) },
+        include: { sender: { select: senderSelect }, replyTo: { select: replySelect } },
       });
 
       io.to(roomChannel(roomId)).emit('chat:message', {
         ...message,
         reactions: [],
+        replyTo: shapeReply(message.replyTo),
         sender: {
           id: message.sender.id,
           username: message.sender.username,

@@ -2,12 +2,13 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { ArrowLeft, ChevronDown, ChevronUp, Copy, Crown, LogOut, Music, Radio } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import ResizeHandle from '@/components/ui/ResizeHandle';
+import ToastStack from '@/components/ui/ToastStack';
 import { useRoom } from '@/features/rooms/hooks/useRooms';
 import { roomsApi } from '@/features/rooms/api/roomsApi';
 import { selectCurrentUser } from '@/features/auth/authSlice';
@@ -28,6 +29,7 @@ const HIDE_MUSIC_KEY = 'syncspace:room:hideMusic';
 const DEFAULT_SIDE = 320;
 const MIN_SIDE = 280;
 const MIN_CHAT_HEIGHT = 240;
+const TOAST_MS = 5000;
 
 const maxSide = () => Math.max(400, Math.min(760, Math.round(window.innerWidth * 0.55)));
 const maxChatHeight = () => Math.max(320, Math.round(window.innerHeight * 0.9));
@@ -56,7 +58,7 @@ export default function Room() {
   const queryClient = useQueryClient();
   const currentUser = useSelector(selectCurrentUser);
   const music = useMusic();
-  const { data: room, isLoading } = useRoom(roomId);
+  const { data: room, isLoading, refetch } = useRoom(roomId);
   const [copied, setCopied] = useState(false);
 
   const [sideWidth, setSideWidth] = useState(() => readNumber(SIDE_KEY, DEFAULT_SIDE));
@@ -64,24 +66,98 @@ export default function Room() {
   const [musicHidden, setMusicHidden] = useState(() => readNumber(HIDE_MUSIC_KEY, 0) === 1);
   const chatRef = useRef(null);
 
+  const [onlineIds, setOnlineIds] = useState(() => new Set()); // who has this room open right now
+  const [toasts, setToasts] = useState([]);
+  const prevMembersRef = useRef(null);
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+
   // Everyone in the room can control playback
   const { source, changeSource, canControl, registerPlayer, emitPlay, emitPause, emitSeek } =
     useRoomSync(roomId, { isHost: true, allowGuestControl: true });
 
-  // Join the live room channel (and rejoin if the socket reconnects)
+  const dismissToast = useCallback((id) => {
+    setToasts((list) => list.filter((t) => t.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    (text, kind) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setToasts((list) => [...list.slice(-3), { id, text, kind }]);
+      setTimeout(() => dismissToast(id), TOAST_MS);
+    },
+    [dismissToast]
+  );
+
+  // Join the live room channel (and rejoin if the socket reconnects). Also keeps the member list live.
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) return undefined;
     const socket = getSocket();
-    const join = () => socket.emit('room:join', { roomId });
+    setOnlineIds(new Set());
+
+    const refreshRoom = () => {
+      if (typeof refetchRef.current === 'function') refetchRef.current();
+      else queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ['rooms', 'mine'] });
+    };
+
+    const join = () =>
+      socket.emit('room:join', { roomId }, (res) => {
+        if (res?.ok && Array.isArray(res.onlineMemberIds)) setOnlineIds(new Set(res.onlineMemberIds));
+      });
+
+    const onJoined = ({ roomId: rid, userId } = {}) => {
+      if (rid !== roomId || !userId) return;
+      setOnlineIds((prev) => new Set(prev).add(userId));
+      refreshRoom();
+    };
+
+    const onLeft = ({ roomId: rid, userId } = {}) => {
+      if (rid !== roomId || !userId) return;
+      setOnlineIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+      refreshRoom();
+    };
 
     if (socket.connected) join();
     socket.on('connect', join);
+    socket.on('room:member-joined', onJoined);
+    socket.on('room:member-left', onLeft);
 
     return () => {
       socket.off('connect', join);
+      socket.off('room:member-joined', onJoined);
+      socket.off('room:member-left', onLeft);
       socket.emit('room:leave', { roomId });
     };
+  }, [roomId, queryClient]);
+
+  // A different room starts with a clean slate (so nothing is announced by mistake)
+  useEffect(() => {
+    prevMembersRef.current = null;
   }, [roomId]);
+
+  // Popup when someone joins or leaves the group: we compare the member list before and after
+  const members = room?.members;
+  useEffect(() => {
+    if (!members) return;
+    const current = new Map(
+      members.map((m) => [m.userId, m.user?.profile?.displayName || m.user?.username || 'Someone'])
+    );
+    const previous = prevMembersRef.current;
+    prevMembersRef.current = current;
+    if (!previous) return; // the first load: nothing to announce
+
+    current.forEach((name, id) => {
+      if (!previous.has(id) && id !== currentUser?.id) pushToast(`${name} joined the room`, 'join');
+    });
+    previous.forEach((name, id) => {
+      if (!current.has(id) && id !== currentUser?.id) pushToast(`${name} left the room`, 'leave');
+    });
+  }, [members, currentUser?.id, pushToast]);
 
   const changeSide = (value) => {
     setSideWidth(value);
@@ -140,9 +216,12 @@ export default function Room() {
   const effectiveSide = Math.min(Math.max(sideWidth, MIN_SIDE), maxSide());
   const chatHeightCss = chatHeight > 0 ? `${Math.min(chatHeight, maxChatHeight())}px` : '60vh';
   const nowPlaying = music.room?.id === roomId ? music.state.queue[music.state.index] : null;
+  const isOnline = (userId) => userId === currentUser?.id || onlineIds.has(userId);
+  const onlineCount = room.members.filter((m) => isOnline(m.userId)).length;
 
   return (
     <div className="flex h-full">
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <RoomsList compact />
 
       {/* Phones and tablets: the whole page scrolls. Computers: panels fit the screen. */}
@@ -283,21 +362,30 @@ export default function Room() {
 
             <div className="surface shrink-0 rounded-xl2 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paper-muted">
-                In the room &middot; {room.members.length}
+                Members &middot; {room.members.length} &middot; {onlineCount} online
               </p>
               <div className="flex flex-wrap gap-2">
-                {room.members.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 rounded-full bg-stage-overlay py-1 pl-1 pr-3">
-                    <Avatar name={m.user.username} src={m.user.profile?.avatarUrl} size={24} />
-                    <span className="max-w-[120px] truncate text-xs text-paper">{m.user.username}</span>
-                    {m.role !== 'MEMBER' && (
-                      <Crown
-                        className="h-3 w-3 shrink-0 text-ember"
-                        aria-label={m.role.replace('_', ' ').toLowerCase()}
-                      />
-                    )}
-                  </div>
-                ))}
+                {room.members.map((m) => {
+                  const online = isOnline(m.userId);
+                  return (
+                    <div
+                      key={m.id}
+                      className={`flex items-center gap-2 rounded-full bg-stage-overlay py-1 pl-1 pr-3 ${
+                        online ? '' : 'opacity-60'
+                      }`}
+                      title={online ? 'Online in this room' : 'Not in the room right now'}
+                    >
+                      <Avatar name={m.user.username} src={m.user.profile?.avatarUrl} size={24} live={online} />
+                      <span className="max-w-[120px] truncate text-xs text-paper">{m.user.username}</span>
+                      {m.role !== 'MEMBER' && (
+                        <Crown
+                          className="h-3 w-3 shrink-0 text-ember"
+                          aria-label={m.role.replace('_', ' ').toLowerCase()}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

@@ -141,10 +141,10 @@ export function useChat(roomId) {
   }, [roomId, socket, currentUser?.id]);
 
   const sendMessage = useCallback(
-    (content) => {
+    (content, replyToId) => {
       const text = content?.trim();
       if (!text) return;
-      socket.emit(EVENTS.SEND, { roomId, content: text }, (res) => {
+      socket.emit(EVENTS.SEND, { roomId, content: text, replyToId: replyToId || undefined }, (res) => {
         if (res && res.ok === false) setError(res.message || 'Could not send the message.');
         else setError(null);
       });

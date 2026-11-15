@@ -1,6 +1,6 @@
 ﻿// apps/web/src/features/chat/components/ChatPanel.jsx
 import { useEffect, useRef, useState } from 'react';
-import { Send, Smile, Paperclip, X, Mic, Square } from 'lucide-react';
+import { Send, Smile, Paperclip, X, Mic, Square, Reply } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import { useChat } from '../hooks/useChat';
 import { messagesApi } from '../api/messagesApi';
@@ -33,6 +33,14 @@ function formatSeconds(total) {
   return `${m}:${s}`;
 }
 
+// A short description of a message, used in reply quotes
+function snippetOf(m) {
+  if (m?.content) return m.content;
+  if (m?.type === 'IMAGE') return 'Photo';
+  if (AUDIO_NAME.test(m?.fileName || '')) return 'Voice note';
+  return m?.fileName || 'Attachment';
+}
+
 export default function ChatPanel({ roomId, currentUserId }) {
   const { messages, loading, error, typingUsers, sendMessage, notifyTyping, react } = useChat(roomId);
   const [draft, setDraft] = useState('');
@@ -42,6 +50,8 @@ export default function ChatPanel({ roomId, currentUserId }) {
   const [uploadError, setUploadError] = useState(null);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [replyingTo, setReplyingTo] = useState(null); // { id, name, snippet }
+  const [flashId, setFlashId] = useState(null);
 
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -52,6 +62,7 @@ export default function ChatPanel({ roomId, currentUserId }) {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const cancelledRef = useRef(false);
+  const flashTimerRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -70,6 +81,33 @@ export default function ChatPanel({ roomId, currentUserId }) {
       document.removeEventListener('touchstart', onDown);
     };
   }, [showPicker]);
+
+  // A reply belongs to one room
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [roomId]);
+
+  useEffect(() => () => clearTimeout(flashTimerRef.current), []);
+
+  const startReply = (m) => {
+    setReplyingTo({
+      id: m.id,
+      name: m.sender?.displayName || m.sender?.username || 'Someone',
+      snippet: snippetOf(m),
+    });
+    setOpenReactionsFor(null);
+    textInputRef.current?.focus();
+  };
+
+  // Scroll to the message that was replied to, and highlight it for a moment
+  const jumpTo = (messageId) => {
+    const el = scrollRef.current?.querySelector(`[data-mid="${messageId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashId(messageId);
+    clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashId(null), 1500);
+  };
 
   const insertEmoji = (emoji) => {
     const input = textInputRef.current;
@@ -110,8 +148,9 @@ export default function ChatPanel({ roomId, currentUserId }) {
   const onSubmit = (e) => {
     e.preventDefault();
     if (!draft.trim()) return;
-    sendMessage(draft);
+    sendMessage(draft, replyingTo?.id);
     setDraft('');
+    setReplyingTo(null);
     setShowPicker(false);
   };
 
@@ -212,6 +251,9 @@ export default function ChatPanel({ roomId, currentUserId }) {
     };
   }, []);
 
+  const hoverButton =
+    'absolute -top-3 rounded-full bg-stage-raised p-1 text-paper-muted opacity-100 transition-opacity hover:text-paper md:opacity-0 md:group-hover:opacity-100';
+
   return (
     <div className="surface flex h-full flex-col rounded-xl2">
       <div className="border-b border-border px-4 py-3">
@@ -242,9 +284,15 @@ export default function ChatPanel({ roomId, currentUserId }) {
           }, {});
 
           return (
-            <div key={m.id} className={`group flex gap-2.5 ${mine ? 'flex-row-reverse' : ''}`}>
+            <div
+              key={m.id}
+              data-mid={m.id}
+              className={`group flex gap-2.5 rounded-xl transition-colors duration-500 ${
+                mine ? 'flex-row-reverse' : ''
+              } ${flashId === m.id ? 'bg-ember/10' : ''}`}
+            >
               <Avatar name={m.sender?.username} src={senderAvatar} size="sm" />
-              <div className={`flex max-w-[75%] flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
+              <div className={`flex min-w-0 max-w-[75%] flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
                 <div className="flex items-baseline gap-2">
                   {!mine && (
                     <span className="text-xs font-semibold text-paper-muted">{senderName}</span>
@@ -252,18 +300,33 @@ export default function ChatPanel({ roomId, currentUserId }) {
                   <span className="text-[11px] text-paper-muted/60">{formatTime(m.createdAt)}</span>
                 </div>
 
-                <div className="relative">
+                <div className="relative min-w-0 max-w-full">
                   <div
                     className={`rounded-2xl px-3.5 py-2 text-sm ${
                       mine ? 'bg-ember-gradient text-white' : 'bg-stage-overlay text-paper'
                     }`}
                   >
+                    {m.replyTo && (
+                      <button
+                        type="button"
+                        onClick={() => jumpTo(m.replyTo.id)}
+                        className={`mb-1.5 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-xs ${
+                          mine
+                            ? 'border-white/70 bg-black/15 text-white/90'
+                            : 'border-ember bg-black/20 text-paper-muted'
+                        }`}
+                        title="Go to the original message"
+                      >
+                        <span className="block truncate font-semibold">{m.replyTo.senderName}</span>
+                        <span className="block truncate">{snippetOf(m.replyTo)}</span>
+                      </button>
+                    )}
                     {m.type === 'IMAGE' && m.fileUrl && (
                       <a href={m.fileUrl} target="_blank" rel="noreferrer">
                         <img
                           src={m.fileUrl}
                           alt={m.fileName || 'shared image'}
-                          className="mb-1 max-w-[220px] rounded-lg"
+                          className="mb-1 max-h-60 max-w-full rounded-lg"
                         />
                       </a>
                     )}
@@ -293,9 +356,21 @@ export default function ChatPanel({ roomId, currentUserId }) {
                   </div>
 
                   <button
+                    type="button"
+                    onClick={() => startReply(m)}
+                    className={`${hoverButton} right-8`}
+                    aria-label="Reply"
+                    title="Reply"
+                  >
+                    <Reply className="h-3.5 w-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setOpenReactionsFor(openReactionsFor === m.id ? null : m.id)}
-                    className="absolute -top-3 right-0 rounded-full bg-stage-raised p-1 text-paper-muted opacity-100 transition-opacity hover:text-paper md:opacity-0 md:group-hover:opacity-100"
+                    className={`${hoverButton} right-0`}
                     aria-label="Add reaction"
+                    title="React"
                   >
                     <Smile className="h-3.5 w-3.5" />
                   </button>
@@ -356,6 +431,25 @@ export default function ChatPanel({ roomId, currentUserId }) {
           {uploadError}
           <button onClick={() => setUploadError(null)} aria-label="Dismiss">
             <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Who you are replying to */}
+      {replyingTo && !recording && (
+        <div className="mx-3 mt-2 flex items-center gap-2 rounded-lg border-l-2 border-ember bg-stage-overlay px-3 py-1.5 text-xs">
+          <Reply className="h-3.5 w-3.5 shrink-0 text-ember" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold text-paper">Replying to {replyingTo.name}</p>
+            <p className="truncate text-paper-muted">{replyingTo.snippet}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplyingTo(null)}
+            aria-label="Cancel reply"
+            className="shrink-0 text-paper-muted hover:text-paper"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -444,7 +538,7 @@ export default function ChatPanel({ roomId, currentUserId }) {
               setDraft(e.target.value);
               notifyTyping();
             }}
-            placeholder={uploading ? 'Uploading...' : 'Send a message'}
+            placeholder={uploading ? 'Uploading...' : replyingTo ? 'Write your reply' : 'Send a message'}
             style={{ fontFamily: `Inter, ${EMOJI_FONT}` }}
             className="h-10 min-w-0 flex-1 rounded-full border border-border bg-stage-raised px-4 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-ember"
           />

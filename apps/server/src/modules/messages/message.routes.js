@@ -8,6 +8,26 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 const router = Router();
 router.use(authMiddleware);
 
+// The message being replied to, shown as a small quote above the reply
+const replySelect = {
+  id: true,
+  content: true,
+  type: true,
+  fileName: true,
+  sender: { select: { username: true, profile: { select: { displayName: true } } } },
+};
+
+const shapeReply = (reply) =>
+  reply
+    ? {
+        id: reply.id,
+        content: reply.content,
+        type: reply.type,
+        fileName: reply.fileName,
+        senderName: reply.sender?.profile?.displayName || reply.sender?.username || 'Someone',
+      }
+    : null;
+
 router.get('/room/:roomId', wrap(async (req, res) => {
   const member = await prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId: req.params.roomId, userId: req.user.id } },
@@ -21,6 +41,7 @@ router.get('/room/:roomId', wrap(async (req, res) => {
     ...(req.query.cursor ? { skip: 1, cursor: { id: String(req.query.cursor) } } : {}),
     include: {
       reactions: true,
+      replyTo: { select: replySelect },
       sender: {
         select: {
           id: true,
@@ -32,6 +53,7 @@ router.get('/room/:roomId', wrap(async (req, res) => {
   });
   const formatted = rows.map((r) => ({
     ...r,
+    replyTo: shapeReply(r.replyTo),
     sender: {
       id: r.sender.id,
       username: r.sender.username,
