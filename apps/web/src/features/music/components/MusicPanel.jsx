@@ -92,7 +92,7 @@ export default function MusicPanel({ room }) {
 
   return (
     <div className="surface flex min-h-0 flex-col gap-4 rounded-xl2 p-3 sm:p-4 lg:flex-1 lg:overflow-y-auto">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Music className="h-5 w-5 text-ember" />
           <h2 className="font-display font-bold text-paper">Music together</h2>
@@ -103,15 +103,15 @@ export default function MusicPanel({ room }) {
       </div>
 
       {!joined && (
-        <Button onClick={() => joinMusic(room.id, room.name)}>
+        <Button className="shrink-0" onClick={() => joinMusic(room.id, room.name)}>
           <Play className="h-4 w-4 fill-current" /> Start listening
         </Button>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="shrink-0 text-sm text-red-400">{error}</p>}
 
       {/* Search */}
-      <form onSubmit={onSearch} className="flex items-center gap-2">
+      <form onSubmit={onSearch} className="flex shrink-0 items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-paper-muted" />
           <input
@@ -127,18 +127,19 @@ export default function MusicPanel({ room }) {
       </form>
 
       {searching && (
-        <p className="flex items-center gap-2 text-xs text-paper-muted">
+        <p className="flex shrink-0 items-center gap-2 text-xs text-paper-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           {slow ? 'Still searching. The server may be waking up, this can take up to a minute…' : 'Searching…'}
         </p>
       )}
-      {searchError && <p className="text-sm text-red-400">{searchError}</p>}
+      {searchError && <p className="shrink-0 text-sm text-red-400">{searchError}</p>}
       {searched && !searching && results.length === 0 && (
-        <p className="text-sm text-paper-muted">No playable songs found. Try different words.</p>
+        <p className="shrink-0 text-sm text-paper-muted">No playable songs found. Try different words.</p>
       )}
 
+      {/* shrink-0: the results keep their full size, the whole panel scrolls instead */}
       {results.length > 0 && (
-        <div className="max-h-72 space-y-1 overflow-y-auto">
+        <div className="max-h-72 shrink-0 space-y-1 overflow-y-auto">
           {results.map((t) => {
             const added = inQueue(t.videoId);
             return (
@@ -174,7 +175,7 @@ export default function MusicPanel({ room }) {
       )}
 
       {/* Paste a link */}
-      <form onSubmit={onAddLink} className="flex items-center gap-2">
+      <form onSubmit={onAddLink} className="flex shrink-0 items-center gap-2">
         <div className="relative flex-1">
           <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-paper-muted" />
           <input
@@ -192,11 +193,11 @@ export default function MusicPanel({ room }) {
         </Button>
       </form>
       {linkMsg && (
-        <p className={`text-sm ${linkMsg.ok ? 'text-paper-muted' : 'text-red-400'}`}>{linkMsg.text}</p>
+        <p className={`shrink-0 text-sm ${linkMsg.ok ? 'text-paper-muted' : 'text-red-400'}`}>{linkMsg.text}</p>
       )}
 
       {/* Queue */}
-      <div>
+      <div className="shrink-0">
         <p className="mb-2 text-sm font-semibold text-paper-muted">
           Queue &middot; {state.queue.length} song{state.queue.length === 1 ? '' : 's'}
         </p>
@@ -205,7 +206,7 @@ export default function MusicPanel({ room }) {
           <p className="text-sm text-paper-muted">Nothing in the queue yet. Search for a song or paste a link.</p>
         )}
 
-        <div className="max-h-72 space-y-1 overflow-y-auto lg:max-h-none">
+        <div className="max-h-80 space-y-1 overflow-y-auto">
           {state.queue.map((item, i) => {
             const current = i === state.index;
             return (

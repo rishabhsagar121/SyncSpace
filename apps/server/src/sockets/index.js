@@ -11,6 +11,7 @@ import { registerChatHandlers } from './handlers/chat.handler.js';
 import { registerSyncHandlers } from './handlers/sync.handler.js';
 import { registerWebrtcHandlers } from './handlers/webrtc.handler.js';
 import { registerMusicHandlers } from './handlers/music.handler.js';
+import { registerStreamHandlers, bridgeStreamDomainEvents } from './handlers/stream.handler.js';
 
 function userChannel(userId) {
   return `user:${userId}`;
@@ -36,9 +37,11 @@ export function initSockets(httpServer) {
     registerSyncHandlers(io, socket);
     registerWebrtcHandlers(io, socket);
     registerMusicHandlers(io, socket);
+    registerStreamHandlers(io, socket);
   });
 
   bridgeRoomDomainEvents(io, domainEvents);
+  bridgeStreamDomainEvents(io, domainEvents);
 
   // Someone who leaves or is kicked stops receiving the room's music
   const removeFromMusic = ({ roomId, userId }) => {
