@@ -261,8 +261,8 @@ export default function Room() {
 
         {/* Music: show or hide the song section. Hiding it never stops the music. */}
         {isMusicRoom && (
-          <div className="px-2 pt-2 sm:px-4 sm:pt-4">
-            <div className="surface flex items-center gap-3 rounded-xl2 px-3 py-2">
+          <div className="px-2 pt-2 sm:px-4 sm:pt-3">
+            <div className="surface flex items-center gap-3 rounded-xl2 px-3 py-1.5">
               <Music className="h-4 w-4 shrink-0 text-ember" />
               <p className="min-w-0 flex-1 truncate text-sm text-paper">
                 {nowPlaying
@@ -350,8 +350,9 @@ export default function Room() {
             />
           )}
 
+          {/* On a short screen this side scrolls, so the chat always keeps its size */}
           <div
-            className={`flex min-w-0 flex-col gap-3 lg:overflow-hidden ${
+            className={`flex min-w-0 flex-col gap-3 lg:overflow-y-auto ${
               showLeft ? '' : 'lg:mx-auto lg:w-full lg:max-w-4xl'
             }`}
           >
@@ -370,7 +371,7 @@ export default function Room() {
 
             <div
               ref={panelRef}
-              className="h-[var(--chat-h)] min-h-[480px] lg:h-auto lg:min-h-0 lg:flex-1"
+              className="h-[var(--chat-h)] min-h-[480px] lg:h-auto lg:min-h-[520px] lg:flex-1"
             >
               <RoomPanel
                 room={room}

@@ -80,49 +80,36 @@ export default function RoomPanel({ room, currentUserId, onlineIds, call, onLeav
 
   const labelOf = (m) => (m.role === 'HOST' ? 'Host' : m.role === 'CO_HOST' ? 'Co-host' : inCall(m.userId) ? 'Speaker' : null);
 
-  const copyChip = (
-    <button
-      type="button"
-      onClick={onCopyCode}
-      className="flex items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-1 text-xs font-medium text-white hover:bg-black/40"
-      title="Copy the room code"
-    >
-      <Copy className="h-3 w-3" /> {copied ? 'Copied' : 'Code'}
-    </button>
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {/* Room card */}
-      {tab === 'people' ? (
+      {/* Room card: only on the People tab, so the Chat tab keeps all its space */}
+      {tab === 'people' && (
         <div className={`shrink-0 rounded-2xl bg-gradient-to-br ${gradient} p-4 text-white shadow-card`}>
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-stage">
               <Users className="h-3.5 w-3.5" /> {room.members.length}
               <span className="font-normal text-stage/70">&middot; {onlineCount} online</span>
             </span>
-            {copyChip}
+            <button
+              type="button"
+              onClick={onCopyCode}
+              className="flex items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-1 text-xs font-medium text-white hover:bg-black/40"
+              title="Copy the room code"
+            >
+              <Copy className="h-3 w-3" /> {copied ? 'Copied' : 'Code'}
+            </button>
           </div>
           <h2 className="mt-3 line-clamp-2 break-words font-display text-lg font-bold leading-snug">{room.name}</h2>
           <p className="mt-1 truncate text-xs text-white/85">
             Hosted by {room.host?.username} &middot; {room.mode.replace('_', ' ').toLowerCase()}
           </p>
         </div>
-      ) : (
-        <div
-          className={`flex shrink-0 items-center justify-between gap-2 rounded-2xl bg-gradient-to-br ${gradient} px-4 py-2.5 text-white shadow-card`}
-        >
-          <h2 className="min-w-0 truncate font-display text-sm font-bold">{room.name}</h2>
-          <span className="flex shrink-0 items-center gap-1 text-xs">
-            <Users className="h-3.5 w-3.5" /> {onlineCount}/{room.members.length}
-          </span>
-        </div>
       )}
 
       {/* Tabs */}
       <div className="flex shrink-0 gap-1 rounded-full bg-stage-raised p-1">
         {[
-          { id: 'people', label: 'People' },
+          { id: 'people', label: `People · ${onlineCount}/${room.members.length}` },
           { id: 'chat', label: 'Chat' },
         ].map((t) => (
           <button
@@ -181,11 +168,11 @@ export default function RoomPanel({ room, currentUserId, onlineIds, call, onLeav
       </div>
 
       {/* Chat (stays mounted so messages keep arriving while you look at People) */}
-      <div className={`surface min-h-0 flex-1 overflow-hidden rounded-xl2 ${tab === 'chat' ? '' : 'hidden'}`}>
+      <div className={`surface min-h-[240px] flex-1 overflow-hidden rounded-xl2 ${tab === 'chat' ? '' : 'hidden'}`}>
         <ChatPanel roomId={room.id} currentUserId={currentUserId} embedded active={tab === 'chat'} />
       </div>
 
-      <CallToolbar call={call} onLeaveRoom={onLeaveRoom} />
+      <CallToolbar call={call} onLeaveRoom={onLeaveRoom} compact={tab === 'chat'} />
     </div>
   );
 }
