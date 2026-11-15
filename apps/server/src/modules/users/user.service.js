@@ -9,6 +9,32 @@ export const userService = {
     return user;
   },
 
+  // What other people may see: no email unless the person allowed it, and presence only if they share it
+  async getPublicProfile(targetId, viewerId) {
+    const user = await userRepository.findById(targetId);
+    if (!user || user.deletedAt) throw AppError.notFound('User not found');
+
+    const privacy = user.profile?.privacy || {};
+    const isSelf = targetId === viewerId;
+    const sharePresence = isSelf || privacy.showLastSeen !== false;
+
+    return {
+      id: user.id,
+      username: user.username,
+      presenceStatus: sharePresence ? user.presenceStatus : 'OFFLINE',
+      lastSeenAt: sharePresence ? user.lastSeenAt : null,
+      createdAt: user.createdAt,
+      ...(isSelf || privacy.showEmail === true ? { email: user.email } : {}),
+      profile: user.profile
+        ? {
+            displayName: user.profile.displayName,
+            bio: user.profile.bio,
+            avatarUrl: user.profile.avatarUrl,
+          }
+        : null,
+    };
+  },
+
   async search(query, requesterId) {
     if (!query || query.trim().length < 2) return [];
     return userRepository.searchByUsername(query.trim(), requesterId);

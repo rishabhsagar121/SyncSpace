@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Smile, Paperclip, X, Mic, Square, Reply } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
+import { useProfileCard } from '@/features/profile/ProfileCardProvider';
 import { useChat } from '../hooks/useChat';
 import { messagesApi } from '../api/messagesApi';
 
@@ -41,8 +42,10 @@ function snippetOf(m) {
   return m?.fileName || 'Attachment';
 }
 
-export default function ChatPanel({ roomId, currentUserId }) {
+// embedded: used inside the room panel (no own border or title). active: false while its tab is hidden.
+export default function ChatPanel({ roomId, currentUserId, embedded = false, active = true }) {
   const { messages, loading, error, typingUsers, sendMessage, notifyTyping, react } = useChat(roomId);
+  const { openProfile } = useProfileCard();
   const [draft, setDraft] = useState('');
   const [openReactionsFor, setOpenReactionsFor] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -67,6 +70,11 @@ export default function ChatPanel({ roomId, currentUserId }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length]);
+
+  // Coming back to this tab: jump to the newest message
+  useEffect(() => {
+    if (active) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [active]);
 
   // Close the emoji picker when clicking anywhere else
   useEffect(() => {
@@ -255,10 +263,12 @@ export default function ChatPanel({ roomId, currentUserId }) {
     'absolute -top-3 rounded-full bg-stage-raised p-1 text-paper-muted opacity-100 transition-opacity hover:text-paper md:opacity-0 md:group-hover:opacity-100';
 
   return (
-    <div className="surface flex h-full flex-col rounded-xl2">
-      <div className="border-b border-border px-4 py-3">
-        <p className="text-sm font-semibold text-paper-muted">Chat</p>
-      </div>
+    <div className={embedded ? 'flex h-full flex-col' : 'surface flex h-full flex-col rounded-xl2'}>
+      {!embedded && (
+        <div className="border-b border-border px-4 py-3">
+          <p className="text-sm font-semibold text-paper-muted">Chat</p>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {loading && (
@@ -277,6 +287,7 @@ export default function ChatPanel({ roomId, currentUserId }) {
           const mine = m.senderId === currentUserId;
           const senderName = m.sender?.displayName || m.sender?.username;
           const senderAvatar = m.sender?.avatarUrl || m.sender?.profile?.avatarUrl;
+          const senderId = m.sender?.id ?? m.senderId;
           const isVoiceNote = m.type === 'FILE' && m.fileUrl && AUDIO_NAME.test(m.fileName || '');
           const reactionCounts = (m.reactions || []).reduce((acc, r) => {
             acc[r.emoji] = (acc[r.emoji] || 0) + 1;
@@ -291,7 +302,22 @@ export default function ChatPanel({ roomId, currentUserId }) {
                 mine ? 'flex-row-reverse' : ''
               } ${flashId === m.id ? 'bg-ember/10' : ''}`}
             >
-              <Avatar name={m.sender?.username} src={senderAvatar} size="sm" />
+              {/* Tap the picture to see their profile and send a friend request */}
+              <button
+                type="button"
+                onClick={() =>
+                  openProfile(senderId, {
+                    username: m.sender?.username,
+                    displayName: m.sender?.displayName,
+                    avatarUrl: senderAvatar,
+                  })
+                }
+                className="shrink-0 self-start rounded-full"
+                aria-label={`View ${senderName}'s profile`}
+                title={`View ${senderName}'s profile`}
+              >
+                <Avatar name={m.sender?.username} src={senderAvatar} size="sm" />
+              </button>
               <div className={`flex min-w-0 max-w-[75%] flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
                 <div className="flex items-baseline gap-2">
                   {!mine && (
@@ -331,7 +357,7 @@ export default function ChatPanel({ roomId, currentUserId }) {
                       </a>
                     )}
                     {isVoiceNote && (
-                      <audio controls preload="metadata" src={m.fileUrl} className="h-10 w-[220px]" />
+                      <audio controls preload="metadata" src={m.fileUrl} className="h-10 w-[220px] max-w-full" />
                     )}
                     {m.type === 'FILE' && m.fileUrl && !isVoiceNote && (
                       <a

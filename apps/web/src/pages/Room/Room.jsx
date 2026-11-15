@@ -1,11 +1,10 @@
 // apps/web/src/pages/Room/Room.jsx
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, ChevronDown, ChevronUp, Copy, Crown, LogOut, Music, Radio } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Copy, LogOut, Music, Radio } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import ResizeHandle from '@/components/ui/ResizeHandle';
 import ToastStack from '@/components/ui/ToastStack';
@@ -13,26 +12,26 @@ import { useRoom } from '@/features/rooms/hooks/useRooms';
 import { roomsApi } from '@/features/rooms/api/roomsApi';
 import { selectCurrentUser } from '@/features/auth/authSlice';
 import { getSocket } from '@/lib/socket';
-import ChatPanel from '@/features/chat/components/ChatPanel';
 import YouTubePlayer from '@/features/sync/components/YouTubePlayer';
 import SourceBar from '@/features/sync/components/SourceBar';
 import StreamRoomPlayer from '@/features/sync/components/StreamRoomPlayer';
 import { useRoomSync } from '@/features/sync/hooks/useRoomSync';
-import VoiceBar from '@/features/webrtc/components/VoiceBar';
+import { useVoiceCall } from '@/features/webrtc/hooks/useVoiceCall';
 import RoomsList from '@/features/rooms/components/RoomsList';
+import RoomPanel from '@/features/rooms/components/RoomPanel';
 import MusicPanel from '@/features/music/components/MusicPanel';
 import { useMusic } from '@/features/music/MusicProvider';
 
 const SIDE_KEY = 'syncspace:room:sideWidth';
 const CHAT_HEIGHT_KEY = 'syncspace:room:chatHeight';
 const HIDE_MUSIC_KEY = 'syncspace:room:hideMusic';
-const DEFAULT_SIDE = 320;
-const MIN_SIDE = 280;
-const MIN_CHAT_HEIGHT = 240;
+const DEFAULT_SIDE = 340;
+const MIN_SIDE = 300;
+const MIN_PANEL_HEIGHT = 480;
 const TOAST_MS = 5000;
 
-const maxSide = () => Math.max(400, Math.min(760, Math.round(window.innerWidth * 0.55)));
-const maxChatHeight = () => Math.max(320, Math.round(window.innerHeight * 0.9));
+const maxSide = () => Math.max(420, Math.min(760, Math.round(window.innerWidth * 0.55)));
+const maxPanelHeight = () => Math.max(560, Math.round(window.innerHeight * 0.95));
 
 function readNumber(key, fallback) {
   try {
@@ -62,15 +61,18 @@ export default function Room() {
   const [copied, setCopied] = useState(false);
 
   const [sideWidth, setSideWidth] = useState(() => readNumber(SIDE_KEY, DEFAULT_SIDE));
-  const [chatHeight, setChatHeight] = useState(() => readNumber(CHAT_HEIGHT_KEY, 0)); // 0 = default height
+  const [panelHeight, setPanelHeight] = useState(() => readNumber(CHAT_HEIGHT_KEY, 0)); // 0 = default height
   const [musicHidden, setMusicHidden] = useState(() => readNumber(HIDE_MUSIC_KEY, 0) === 1);
-  const chatRef = useRef(null);
+  const panelRef = useRef(null);
 
   const [onlineIds, setOnlineIds] = useState(() => new Set()); // who has this room open right now
   const [toasts, setToasts] = useState([]);
   const prevMembersRef = useRef(null);
   const refetchRef = useRef(refetch);
   refetchRef.current = refetch;
+
+  // The voice / video call lives here, so the toolbar and the tiles share one call
+  const call = useVoiceCall(roomId, currentUser?.id);
 
   // Everyone in the room can control playback
   const { source, changeSource, canControl, registerPlayer, emitPlay, emitPause, emitSeek } =
@@ -164,8 +166,8 @@ export default function Room() {
     writeValue(SIDE_KEY, value);
   };
 
-  const changeChatHeight = (value) => {
-    setChatHeight(value);
+  const changePanelHeight = (value) => {
+    setPanelHeight(value);
     writeValue(CHAT_HEIGHT_KEY, value);
   };
 
@@ -214,10 +216,8 @@ export default function Room() {
   const isMusicRoom = room.mode === 'MUSIC';
   const showLeft = !(isMusicRoom && musicHidden); // the music panel stays mounted when hidden, so nothing is lost
   const effectiveSide = Math.min(Math.max(sideWidth, MIN_SIDE), maxSide());
-  const chatHeightCss = chatHeight > 0 ? `${Math.min(chatHeight, maxChatHeight())}px` : '60vh';
+  const panelHeightCss = panelHeight > 0 ? `${Math.min(panelHeight, maxPanelHeight())}px` : '75vh';
   const nowPlaying = music.room?.id === roomId ? music.state.queue[music.state.index] : null;
-  const isOnline = (userId) => userId === currentUser?.id || onlineIds.has(userId);
-  const onlineCount = room.members.filter((m) => isOnline(m.userId)).length;
 
   return (
     <div className="flex h-full">
@@ -283,7 +283,7 @@ export default function Room() {
         )}
 
         <div
-          style={{ '--side-w': `${effectiveSide}px`, '--chat-h': chatHeightCss }}
+          style={{ '--side-w': `${effectiveSide}px`, '--chat-h': panelHeightCss }}
           className={`grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden ${
             showLeft ? 'lg:grid-cols-[minmax(0,1fr)_16px_var(--side-w)]' : 'lg:grid-cols-[minmax(0,1fr)]'
           }`}
@@ -335,12 +335,12 @@ export default function Room() {
             )}
           </div>
 
-          {/* Computers: drag this bar to make the chat side wider or narrower */}
+          {/* Computers: drag this bar to make the side panel wider or narrower */}
           {showLeft && (
             <ResizeHandle
               direction="horizontal"
               className="hidden lg:flex"
-              label="Resize the chat panel"
+              label="Resize the side panel"
               getValue={() => effectiveSide}
               onChange={changeSide}
               min={MIN_SIDE}
@@ -350,63 +350,37 @@ export default function Room() {
             />
           )}
 
-          {/* The right side scrolls on computers, so the chat can always be reached */}
           <div
-            className={`flex min-w-0 flex-col gap-3 lg:gap-4 lg:overflow-y-auto ${
+            className={`flex min-w-0 flex-col gap-3 lg:overflow-hidden ${
               showLeft ? '' : 'lg:mx-auto lg:w-full lg:max-w-4xl'
             }`}
           >
-            <div className="shrink-0">
-              <VoiceBar roomId={roomId} currentUserId={currentUser?.id} members={room.members} />
-            </div>
-
-            <div className="surface shrink-0 rounded-xl2 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-paper-muted">
-                Members &middot; {room.members.length} &middot; {onlineCount} online
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {room.members.map((m) => {
-                  const online = isOnline(m.userId);
-                  return (
-                    <div
-                      key={m.id}
-                      className={`flex items-center gap-2 rounded-full bg-stage-overlay py-1 pl-1 pr-3 ${
-                        online ? '' : 'opacity-60'
-                      }`}
-                      title={online ? 'Online in this room' : 'Not in the room right now'}
-                    >
-                      <Avatar name={m.user.username} src={m.user.profile?.avatarUrl} size={24} live={online} />
-                      <span className="max-w-[120px] truncate text-xs text-paper">{m.user.username}</span>
-                      {m.role !== 'MEMBER' && (
-                        <Crown
-                          className="h-3 w-3 shrink-0 text-ember"
-                          aria-label={m.role.replace('_', ' ').toLowerCase()}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Phones and tablets: drag this bar up or down to make the chat taller or shorter */}
+            {/* Phones and tablets: drag this bar up or down to make the panel taller or shorter */}
             <ResizeHandle
               direction="vertical"
               className="flex lg:hidden"
-              label="Resize the chat height"
-              getValue={() => chatRef.current?.offsetHeight ?? 400}
-              onChange={changeChatHeight}
-              min={MIN_CHAT_HEIGHT}
-              max={maxChatHeight}
+              label="Resize the panel height"
+              getValue={() => panelRef.current?.offsetHeight ?? 600}
+              onChange={changePanelHeight}
+              min={MIN_PANEL_HEIGHT}
+              max={maxPanelHeight}
               invert
-              onReset={() => changeChatHeight(0)}
+              onReset={() => changePanelHeight(0)}
             />
 
             <div
-              ref={chatRef}
-              className="h-[var(--chat-h)] min-h-[320px] overflow-hidden lg:h-auto lg:min-h-[360px] lg:flex-1"
+              ref={panelRef}
+              className="h-[var(--chat-h)] min-h-[480px] lg:h-auto lg:min-h-0 lg:flex-1"
             >
-              <ChatPanel roomId={roomId} currentUserId={currentUser?.id} />
+              <RoomPanel
+                room={room}
+                currentUserId={currentUser?.id}
+                onlineIds={onlineIds}
+                call={call}
+                onLeaveRoom={leave}
+                onCopyCode={copyCode}
+                copied={copied}
+              />
             </div>
           </div>
         </div>

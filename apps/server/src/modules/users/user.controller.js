@@ -8,7 +8,7 @@ export const userController = {
   }),
 
   getById: catchAsync(async (req, res) => {
-    const user = await userService.getProfile(req.params.userId);
+    const user = await userService.getPublicProfile(req.params.userId, req.user.id);
     res.json({ success: true, data: { user } });
   }),
 
