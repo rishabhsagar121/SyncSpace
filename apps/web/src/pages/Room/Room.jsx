@@ -1,7 +1,7 @@
 // apps/web/src/pages/Room/Room.jsx
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, ChevronDown, ChevronUp, Copy, LogOut, Music, Radio } from 'lucide-react';
+import { ArrowLeft, Copy, LogOut, PanelLeftClose, PanelLeftOpen, Radio } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -22,15 +22,15 @@ import RoomPanel from '@/features/rooms/components/RoomPanel';
 import MusicPanel from '@/features/music/components/MusicPanel';
 import { useMusic } from '@/features/music/MusicProvider';
 
-const SIDE_KEY = 'syncspace:room:sideWidth';
-const CHAT_HEIGHT_KEY = 'syncspace:room:chatHeight';
-const HIDE_MUSIC_KEY = 'syncspace:room:hideMusic';
-const DEFAULT_SIDE = 340;
+const SIDE_KEY = 'syncspace:room:sideWidth2';
+const PANEL_HEIGHT_KEY = 'syncspace:room:chatHeight';
+const HIDE_LEFT_KEY = 'syncspace:room:hideLeft';
+const DEFAULT_SIDE = 400;
 const MIN_SIDE = 300;
 const MIN_PANEL_HEIGHT = 480;
 const TOAST_MS = 5000;
 
-const maxSide = () => Math.max(420, Math.min(760, Math.round(window.innerWidth * 0.55)));
+const maxSide = () => Math.max(440, Math.min(800, Math.round(window.innerWidth * 0.6)));
 const maxPanelHeight = () => Math.max(560, Math.round(window.innerHeight * 0.95));
 
 function readNumber(key, fallback) {
@@ -61,8 +61,8 @@ export default function Room() {
   const [copied, setCopied] = useState(false);
 
   const [sideWidth, setSideWidth] = useState(() => readNumber(SIDE_KEY, DEFAULT_SIDE));
-  const [panelHeight, setPanelHeight] = useState(() => readNumber(CHAT_HEIGHT_KEY, 0)); // 0 = default height
-  const [musicHidden, setMusicHidden] = useState(() => readNumber(HIDE_MUSIC_KEY, 0) === 1);
+  const [panelHeight, setPanelHeight] = useState(() => readNumber(PANEL_HEIGHT_KEY, 0)); // 0 = default height
+  const [leftHidden, setLeftHidden] = useState(() => readNumber(HIDE_LEFT_KEY, 0) === 1);
   const panelRef = useRef(null);
 
   const [onlineIds, setOnlineIds] = useState(() => new Set()); // who has this room open right now
@@ -168,13 +168,13 @@ export default function Room() {
 
   const changePanelHeight = (value) => {
     setPanelHeight(value);
-    writeValue(CHAT_HEIGHT_KEY, value);
+    writeValue(PANEL_HEIGHT_KEY, value);
   };
 
-  const toggleMusic = () => {
-    const next = !musicHidden;
-    setMusicHidden(next);
-    writeValue(HIDE_MUSIC_KEY, next ? 1 : 0);
+  const toggleLeft = () => {
+    const next = !leftHidden;
+    setLeftHidden(next);
+    writeValue(HIDE_LEFT_KEY, next ? 1 : 0);
   };
 
   const copyCode = () => {
@@ -214,10 +214,12 @@ export default function Room() {
   }
 
   const isMusicRoom = room.mode === 'MUSIC';
-  const showLeft = !(isMusicRoom && musicHidden); // the music panel stays mounted when hidden, so nothing is lost
+  // Music and YouTube can be hidden without stopping. A local movie stream is never hidden, to keep it smooth.
+  const canHideLeft = isMusicRoom || room.mode === 'YOUTUBE';
+  const showLeft = !(canHideLeft && leftHidden); // hidden with CSS only, so nothing is unmounted or stopped
   const effectiveSide = Math.min(Math.max(sideWidth, MIN_SIDE), maxSide());
   const panelHeightCss = panelHeight > 0 ? `${Math.min(panelHeight, maxPanelHeight())}px` : '75vh';
-  const nowPlaying = music.room?.id === roomId ? music.state.queue[music.state.index] : null;
+  const hideLabel = isMusicRoom ? 'music' : 'video';
 
   return (
     <div className="flex h-full">
@@ -226,7 +228,8 @@ export default function Room() {
 
       {/* Phones and tablets: the whole page scrolls. Computers: panels fit the screen. */}
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3 sm:px-6 sm:py-4">
+        {/* A slim header, so the chat gets the height */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2 sm:px-5">
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={() => navigate('/app')}
@@ -236,19 +239,35 @@ export default function Room() {
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate font-display text-lg font-bold text-paper">{room.name}</h1>
-              <p className="truncate text-xs text-paper-muted">
+              <h1 className="truncate font-display text-base font-bold text-paper">{room.name}</h1>
+              <p className="hidden truncate text-xs text-paper-muted sm:block">
                 Hosted by {room.host?.username} &middot; {room.mode.replace('_', ' ').toLowerCase()}
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canHideLeft && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleLeft}
+                title={
+                  leftHidden
+                    ? `Show the ${hideLabel}`
+                    : `Hide the ${hideLabel} and use the whole screen for chat (it keeps playing)`
+                }
+              >
+                {leftHidden ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                <span className="hidden sm:inline">{leftHidden ? `Show ${hideLabel}` : `Hide ${hideLabel}`}</span>
+              </Button>
+            )}
             <button
               onClick={copyCode}
               className="surface flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-xs text-paper hover:bg-stage-overlay"
+              title="Copy the room code"
             >
-              <span className="hidden sm:inline">{room.code}</span>
-              <span className="sm:hidden">Code</span>
+              <span className="hidden max-w-[110px] truncate md:inline">{room.code}</span>
+              <span className="md:hidden">Code</span>
               <Copy className="h-3 w-3" />
               {copied && <span className="text-ember">copied</span>}
             </button>
@@ -259,32 +278,9 @@ export default function Room() {
           </div>
         </div>
 
-        {/* Music: show or hide the song section. Hiding it never stops the music. */}
-        {isMusicRoom && (
-          <div className="px-2 pt-2 sm:px-4 sm:pt-3">
-            <div className="surface flex items-center gap-3 rounded-xl2 px-3 py-1.5">
-              <Music className="h-4 w-4 shrink-0 text-ember" />
-              <p className="min-w-0 flex-1 truncate text-sm text-paper">
-                {nowPlaying
-                  ? `${music.state.playing ? 'Playing' : 'Paused'}: ${nowPlaying.title}`
-                  : 'Music · nothing playing yet'}
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleMusic}
-                title={musicHidden ? 'Show the song section' : 'Hide the song section (music keeps playing)'}
-              >
-                {musicHidden ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                {musicHidden ? 'Show music' : 'Hide music'}
-              </Button>
-            </div>
-          </div>
-        )}
-
         <div
           style={{ '--side-w': `${effectiveSide}px`, '--chat-h': panelHeightCss }}
-          className={`grid gap-3 p-2 sm:p-4 lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden ${
+          className={`grid gap-3 p-2 sm:p-3 lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:gap-0 lg:overflow-hidden ${
             showLeft ? 'lg:grid-cols-[minmax(0,1fr)_16px_var(--side-w)]' : 'lg:grid-cols-[minmax(0,1fr)]'
           }`}
         >
@@ -350,7 +346,7 @@ export default function Room() {
             />
           )}
 
-          {/* On a short screen this side scrolls, so the chat always keeps its size */}
+          {/* On a very short screen this side scrolls, so the chat always keeps its size */}
           <div
             className={`flex min-w-0 flex-col gap-3 lg:overflow-y-auto ${
               showLeft ? '' : 'lg:mx-auto lg:w-full lg:max-w-4xl'
@@ -371,7 +367,7 @@ export default function Room() {
 
             <div
               ref={panelRef}
-              className="h-[var(--chat-h)] min-h-[480px] lg:h-auto lg:min-h-[520px] lg:flex-1"
+              className="h-[var(--chat-h)] min-h-[480px] lg:h-auto lg:min-h-[420px] lg:flex-1"
             >
               <RoomPanel
                 room={room}

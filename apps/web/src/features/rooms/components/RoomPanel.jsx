@@ -3,7 +3,7 @@ import { Copy, Mic, MicOff, Users } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import ChatPanel from '@/features/chat/components/ChatPanel';
 import CallStage from '@/features/webrtc/components/CallStage';
-import CallToolbar from '@/features/webrtc/components/CallToolbar';
+import CallToolbar, { CallMiniControls } from '@/features/webrtc/components/CallToolbar';
 import { useProfileCard } from '@/features/profile/ProfileCardProvider';
 
 const GRADIENTS = {
@@ -106,24 +106,29 @@ export default function RoomPanel({ room, currentUserId, onlineIds, call, onLeav
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex shrink-0 gap-1 rounded-full bg-stage-raised p-1">
-        {[
-          { id: 'people', label: `People · ${onlineCount}/${room.members.length}` },
-          { id: 'chat', label: 'Chat' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`flex-1 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.id ? 'bg-ember-gradient text-white' : 'text-paper-muted hover:text-paper'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tabs, with small call buttons beside them while the chat is open */}
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 gap-1 rounded-full bg-stage-raised p-1">
+          {[
+            { id: 'people', label: `People · ${onlineCount}/${room.members.length}` },
+            { id: 'chat', label: 'Chat' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`min-w-0 flex-1 truncate rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                tab === t.id ? 'bg-ember-gradient text-white' : 'text-paper-muted hover:text-paper'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab === 'chat' && <CallMiniControls call={call} />}
       </div>
+
+      {tab === 'chat' && call.error && <p className="-mt-1 shrink-0 px-2 text-xs text-red-400">{call.error}</p>}
 
       {/* People */}
       <div className={`surface min-h-0 flex-1 overflow-y-auto rounded-xl2 p-3 ${tab === 'people' ? '' : 'hidden'}`}>
@@ -167,12 +172,12 @@ export default function RoomPanel({ room, currentUserId, onlineIds, call, onLeav
         )}
       </div>
 
-      {/* Chat (stays mounted so messages keep arriving while you look at People) */}
-      <div className={`surface min-h-[240px] flex-1 overflow-hidden rounded-xl2 ${tab === 'chat' ? '' : 'hidden'}`}>
+      {/* Chat takes all the space that is left (it stays mounted, so messages keep arriving) */}
+      <div className={`surface min-h-0 flex-1 overflow-hidden rounded-xl2 ${tab === 'chat' ? '' : 'hidden'}`}>
         <ChatPanel roomId={room.id} currentUserId={currentUserId} embedded active={tab === 'chat'} />
       </div>
 
-      <CallToolbar call={call} onLeaveRoom={onLeaveRoom} compact={tab === 'chat'} />
+      {tab === 'people' && <CallToolbar call={call} onLeaveRoom={onLeaveRoom} />}
     </div>
   );
 }
